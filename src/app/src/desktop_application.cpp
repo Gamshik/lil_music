@@ -29,9 +29,8 @@ int desktop_application::run() {
         // Bridge и player уже собраны в composition root и будут подключены к UI
         // по мере появления JS API и playback-сценариев.
         (void)audio_player_;
-        (void)bridge_;
 
-        window_controller_.run(main_window_configuration);
+        window_controller_.run(main_window_configuration, bridge_);
         return 0;
     } catch (const std::exception& exception) {
         std::cerr << "Не удалось запустить desktop shell: " << exception.what() << '\n';

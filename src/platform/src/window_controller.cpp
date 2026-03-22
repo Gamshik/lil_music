@@ -6,6 +6,7 @@
 #include <sstream>
 #include <string>
 
+#include "soundcloud/bridge/i_ui_bridge.h"
 #include "webview/webview.h"
 
 namespace soundcloud::platform {
@@ -70,7 +71,9 @@ std::string build_missing_asset_html(const std::filesystem::path& missing_file) 
 
 }  // namespace
 
-void window_controller::run(const window_configuration& configuration) const {
+void window_controller::run(
+    const window_configuration& configuration,
+    const bridge::i_ui_bridge& ui_bridge) const {
 #ifndef NDEBUG
     constexpr bool is_debug_enabled = true;
 #else
@@ -80,6 +83,11 @@ void window_controller::run(const window_configuration& configuration) const {
     webview::webview window(is_debug_enabled, nullptr);
     window.set_title(configuration.title);
     window.set_size(configuration.width, configuration.height, WEBVIEW_HINT_NONE);
+
+    const std::vector<bridge::ui_binding> bindings = ui_bridge.get_bindings();
+    for (const bridge::ui_binding& binding : bindings) {
+        window.bind(binding.name, binding.handler);
+    }
 
     if (std::filesystem::exists(configuration.entry_file_path)) {
         window.navigate(to_file_url(configuration.entry_file_path));

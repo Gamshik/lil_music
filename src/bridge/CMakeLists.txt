@@ -1,4 +1,5 @@
 add_library(soundcloud_bridge
+    src/bridge_json_codec.cpp
     src/app_bridge.cpp
 )
 

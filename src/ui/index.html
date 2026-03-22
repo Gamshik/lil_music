@@ -10,12 +10,44 @@
     <main class="app-shell">
       <section class="hero">
         <p class="eyebrow">SoundCloud Desktop</p>
-        <h1>UI-слой будет подключён через bridge.</h1>
-        <p class="description">
-          Этот placeholder нужен, чтобы заранее зафиксировать отдельный web-слой в структуре проекта.
-        </p>
+        <div class="hero-header">
+          <div>
+            <h1>Desktop shell уже живой, теперь UI общается с native bridge.</h1>
+            <p class="description">
+              Этот экран подтверждает, что web-layer запущен внутри desktop-приложения и
+              может вызывать C++ сценарии через изолированный bridge.
+            </p>
+          </div>
+          <div class="status-card">
+            <span class="status-label">Bridge status</span>
+            <strong id="bridge-status">Подключение...</strong>
+            <span id="app-name" class="status-meta">Ожидание native-ответа</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="search-panel">
+        <form id="search-form" class="search-form">
+          <label class="search-label" for="search-query">Поиск треков</label>
+          <div class="search-controls">
+            <input
+              id="search-query"
+              name="query"
+              type="search"
+              placeholder="Например, lo-fi, synthwave, ambient"
+              autocomplete="off"
+            />
+            <button type="submit">Искать через bridge</button>
+          </div>
+        </form>
+
+        <div id="search-summary" class="search-summary">
+          Введи запрос, и UI отправит его в C++ слой через `window.searchTracks(...)`.
+        </div>
+
+        <ul id="tracks-list" class="tracks-list"></ul>
       </section>
     </main>
-    <script type="module" src="app.js"></script>
+    <script src="app.js"></script>
   </body>
-  </html>
+</html>
