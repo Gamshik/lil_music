@@ -1,0 +1,56 @@
+# Build directories
+/build/
+/build-*/
+/out/
+
+# CMake generated files
+/CMakeCache.txt
+/cmake_install.cmake
+/compile_commands.json
+/CTestTestfile.cmake
+/Testing/
+/CMakeFiles/
+**/CMakeCache.txt
+**/cmake_install.cmake
+**/CTestTestfile.cmake
+**/CMakeFiles/
+**/.cmake/
+**/.ninja_deps
+**/.ninja_log
+**/build.ninja
+**/rules.ninja
+
+# User-specific CMake presets
+/CMakeUserPresets.json
+
+# Visual Studio and VS Code local state
+/.vs/
+/.vscode/
+*.VC.db
+*.VC.opendb
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Common compiler/linker artifacts
+*.obj
+*.o
+*.pdb
+*.idb
+*.ilk
+*.lib
+*.exp
+*.dll
+*.exe
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.bak
+*.orig
+
+# OS-specific noise
+.DS_Store
+Thumbs.db

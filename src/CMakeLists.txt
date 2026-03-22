@@ -1,0 +1,7 @@
+add_subdirectory(core)
+add_subdirectory(api)
+add_subdirectory(player)
+add_subdirectory(database)
+add_subdirectory(bridge)
+add_subdirectory(platform)
+add_subdirectory(app)

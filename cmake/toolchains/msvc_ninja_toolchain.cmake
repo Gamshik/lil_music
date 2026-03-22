@@ -1,0 +1,145 @@
+set(SOUNDCLOUD_VISUAL_STUDIO_ROOT
+    "C:/Program Files/Microsoft Visual Studio/18/Professional"
+    CACHE PATH "Корень установки Visual Studio")
+
+set(SOUNDCLOUD_WINDOWS_SDK_ROOT
+    "C:/Program Files (x86)/Windows Kits/10"
+    CACHE PATH "Корень установленного Windows SDK")
+
+set(SOUNDCLOUD_TARGET_ARCH
+    "x64"
+    CACHE STRING "Целевая архитектура MSVC")
+
+set_property(CACHE SOUNDCLOUD_TARGET_ARCH PROPERTY STRINGS x64 x86)
+
+function(soundcloud_find_latest_directory base_dir out_var)
+    if(NOT EXISTS "${base_dir}")
+        message(FATAL_ERROR "Не найдена директория: ${base_dir}")
+    endif()
+
+    file(GLOB candidate_directories LIST_DIRECTORIES true "${base_dir}/*")
+    set(existing_directories)
+
+    foreach(candidate_directory IN LISTS candidate_directories)
+        if(IS_DIRECTORY "${candidate_directory}")
+            list(APPEND existing_directories "${candidate_directory}")
+        endif()
+    endforeach()
+
+    if(existing_directories STREQUAL "")
+        message(FATAL_ERROR "В директории ${base_dir} не найдено ни одной версии")
+    endif()
+
+    list(SORT existing_directories COMPARE NATURAL ORDER DESCENDING)
+    list(GET existing_directories 0 selected_directory)
+    set(${out_var} "${selected_directory}" PARENT_SCOPE)
+endfunction()
+
+if(NOT EXISTS "${SOUNDCLOUD_VISUAL_STUDIO_ROOT}")
+    message(FATAL_ERROR
+        "Visual Studio не найдена по пути ${SOUNDCLOUD_VISUAL_STUDIO_ROOT}. "
+        "При необходимости переопределите SOUNDCLOUD_VISUAL_STUDIO_ROOT в preset.")
+endif()
+
+soundcloud_find_latest_directory(
+    "${SOUNDCLOUD_VISUAL_STUDIO_ROOT}/VC/Tools/MSVC"
+    SOUNDCLOUD_MSVC_TOOLS_ROOT)
+
+soundcloud_find_latest_directory(
+    "${SOUNDCLOUD_WINDOWS_SDK_ROOT}/include"
+    SOUNDCLOUD_WINDOWS_SDK_INCLUDE_ROOT)
+
+get_filename_component(
+    SOUNDCLOUD_WINDOWS_SDK_VERSION
+    "${SOUNDCLOUD_WINDOWS_SDK_INCLUDE_ROOT}"
+    NAME)
+
+set(SOUNDCLOUD_VS_CMAKE_ROOT
+    "${SOUNDCLOUD_VISUAL_STUDIO_ROOT}/Common7/IDE/CommonExtensions/Microsoft/CMake")
+
+set(SOUNDCLOUD_HOST_ARCH "x64")
+
+set(SOUNDCLOUD_CL_PATH
+    "${SOUNDCLOUD_MSVC_TOOLS_ROOT}/bin/Host${SOUNDCLOUD_HOST_ARCH}/${SOUNDCLOUD_TARGET_ARCH}/cl.exe")
+set(SOUNDCLOUD_LINK_PATH
+    "${SOUNDCLOUD_MSVC_TOOLS_ROOT}/bin/Host${SOUNDCLOUD_HOST_ARCH}/${SOUNDCLOUD_TARGET_ARCH}/link.exe")
+set(SOUNDCLOUD_RC_PATH
+    "${SOUNDCLOUD_WINDOWS_SDK_ROOT}/bin/${SOUNDCLOUD_WINDOWS_SDK_VERSION}/${SOUNDCLOUD_TARGET_ARCH}/rc.exe")
+set(SOUNDCLOUD_MT_PATH
+    "${SOUNDCLOUD_WINDOWS_SDK_ROOT}/bin/${SOUNDCLOUD_WINDOWS_SDK_VERSION}/${SOUNDCLOUD_TARGET_ARCH}/mt.exe")
+set(SOUNDCLOUD_NINJA_PATH
+    "${SOUNDCLOUD_VS_CMAKE_ROOT}/Ninja/ninja.exe")
+
+foreach(required_path
+        IN ITEMS
+            SOUNDCLOUD_CL_PATH
+            SOUNDCLOUD_LINK_PATH
+            SOUNDCLOUD_RC_PATH
+            SOUNDCLOUD_MT_PATH
+            SOUNDCLOUD_NINJA_PATH)
+    if(NOT EXISTS "${${required_path}}")
+        message(FATAL_ERROR "Не найден обязательный инструмент: ${${required_path}}")
+    endif()
+endforeach()
+
+set(SOUNDCLOUD_INCLUDE_DIRECTORIES
+    "${SOUNDCLOUD_MSVC_TOOLS_ROOT}/include"
+    "${SOUNDCLOUD_MSVC_TOOLS_ROOT}/ATLMFC/include"
+    "${SOUNDCLOUD_VISUAL_STUDIO_ROOT}/VC/Auxiliary/VS/include"
+    "${SOUNDCLOUD_WINDOWS_SDK_ROOT}/include/${SOUNDCLOUD_WINDOWS_SDK_VERSION}/ucrt"
+    "${SOUNDCLOUD_WINDOWS_SDK_ROOT}/include/${SOUNDCLOUD_WINDOWS_SDK_VERSION}/shared"
+    "${SOUNDCLOUD_WINDOWS_SDK_ROOT}/include/${SOUNDCLOUD_WINDOWS_SDK_VERSION}/um"
+    "${SOUNDCLOUD_WINDOWS_SDK_ROOT}/include/${SOUNDCLOUD_WINDOWS_SDK_VERSION}/winrt"
+    "${SOUNDCLOUD_WINDOWS_SDK_ROOT}/include/${SOUNDCLOUD_WINDOWS_SDK_VERSION}/cppwinrt")
+
+set(SOUNDCLOUD_LIBRARY_DIRECTORIES
+    "${SOUNDCLOUD_MSVC_TOOLS_ROOT}/ATLMFC/lib/${SOUNDCLOUD_TARGET_ARCH}"
+    "${SOUNDCLOUD_MSVC_TOOLS_ROOT}/lib/${SOUNDCLOUD_TARGET_ARCH}"
+    "${SOUNDCLOUD_WINDOWS_SDK_ROOT}/lib/${SOUNDCLOUD_WINDOWS_SDK_VERSION}/ucrt/${SOUNDCLOUD_TARGET_ARCH}"
+    "${SOUNDCLOUD_WINDOWS_SDK_ROOT}/lib/${SOUNDCLOUD_WINDOWS_SDK_VERSION}/um/${SOUNDCLOUD_TARGET_ARCH}")
+
+set(SOUNDCLOUD_RUNTIME_PATH
+    "${SOUNDCLOUD_MSVC_TOOLS_ROOT}/bin/Host${SOUNDCLOUD_HOST_ARCH}/${SOUNDCLOUD_TARGET_ARCH}"
+    "${SOUNDCLOUD_WINDOWS_SDK_ROOT}/bin/${SOUNDCLOUD_WINDOWS_SDK_VERSION}/${SOUNDCLOUD_TARGET_ARCH}"
+    "${SOUNDCLOUD_VS_CMAKE_ROOT}/CMake/bin"
+    "${SOUNDCLOUD_VS_CMAKE_ROOT}/Ninja")
+
+list(JOIN SOUNDCLOUD_INCLUDE_DIRECTORIES ";" SOUNDCLOUD_INCLUDE_ENV)
+list(JOIN SOUNDCLOUD_LIBRARY_DIRECTORIES ";" SOUNDCLOUD_LIBRARY_ENV)
+list(JOIN SOUNDCLOUD_RUNTIME_PATH ";" SOUNDCLOUD_RUNTIME_ENV)
+
+set(SOUNDCLOUD_CXX_INCLUDE_FLAGS "")
+foreach(include_directory IN LISTS SOUNDCLOUD_INCLUDE_DIRECTORIES)
+    string(APPEND SOUNDCLOUD_CXX_INCLUDE_FLAGS " /I\"${include_directory}\"")
+endforeach()
+
+set(SOUNDCLOUD_LINKER_LIBRARY_FLAGS "")
+foreach(library_directory IN LISTS SOUNDCLOUD_LIBRARY_DIRECTORIES)
+    string(APPEND SOUNDCLOUD_LINKER_LIBRARY_FLAGS " /LIBPATH:\"${library_directory}\"")
+endforeach()
+
+# CMake и Ninja наследуют переменные окружения процесса.
+# Мы выставляем их здесь заранее, чтобы избежать зависимости от нестабильного VsDevCmd.
+set(ENV{INCLUDE} "${SOUNDCLOUD_INCLUDE_ENV}")
+set(ENV{LIB} "${SOUNDCLOUD_LIBRARY_ENV}")
+set(ENV{LIBPATH} "${SOUNDCLOUD_LIBRARY_ENV}")
+set(ENV{PATH} "${SOUNDCLOUD_RUNTIME_ENV};$ENV{PATH}")
+
+set(CMAKE_SYSTEM_NAME Windows)
+set(CMAKE_SYSTEM_VERSION 10.0)
+
+set(CMAKE_C_COMPILER "${SOUNDCLOUD_CL_PATH}" CACHE FILEPATH "" FORCE)
+set(CMAKE_CXX_COMPILER "${SOUNDCLOUD_CL_PATH}" CACHE FILEPATH "" FORCE)
+set(CMAKE_LINKER "${SOUNDCLOUD_LINK_PATH}" CACHE FILEPATH "" FORCE)
+set(CMAKE_RC_COMPILER "${SOUNDCLOUD_RC_PATH}" CACHE FILEPATH "" FORCE)
+set(CMAKE_MT "${SOUNDCLOUD_MT_PATH}" CACHE FILEPATH "" FORCE)
+set(CMAKE_MAKE_PROGRAM "${SOUNDCLOUD_NINJA_PATH}" CACHE FILEPATH "" FORCE)
+
+set(CMAKE_C_STANDARD_INCLUDE_DIRECTORIES "${SOUNDCLOUD_INCLUDE_DIRECTORIES}")
+set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES "${SOUNDCLOUD_INCLUDE_DIRECTORIES}")
+
+set(CMAKE_C_FLAGS_INIT "${SOUNDCLOUD_CXX_INCLUDE_FLAGS}")
+set(CMAKE_CXX_FLAGS_INIT "${SOUNDCLOUD_CXX_INCLUDE_FLAGS}")
+set(CMAKE_EXE_LINKER_FLAGS_INIT "${SOUNDCLOUD_LINKER_LIBRARY_FLAGS}")
+set(CMAKE_SHARED_LINKER_FLAGS_INIT "${SOUNDCLOUD_LINKER_LIBRARY_FLAGS}")
+set(CMAKE_MODULE_LINKER_FLAGS_INIT "${SOUNDCLOUD_LINKER_LIBRARY_FLAGS}")
