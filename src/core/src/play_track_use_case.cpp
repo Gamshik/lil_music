@@ -4,14 +4,18 @@
 
 namespace soundcloud::core::use_cases {
 
-play_track_use_case::play_track_use_case(ports::i_audio_player& audio_player)
-    : audio_player_(audio_player) {}
+play_track_use_case::play_track_use_case(
+    const ports::i_track_stream_resolver& track_stream_resolver,
+    ports::i_audio_player& audio_player)
+    : track_stream_resolver_(track_stream_resolver),
+      audio_player_(audio_player) {}
 
-void play_track_use_case::execute(const std::string& stream_url) const {
-    if (stream_url.empty()) {
-        throw std::invalid_argument("Не передан stream_url для воспроизведения.");
+void play_track_use_case::execute(const std::string& track_id) const {
+    if (track_id.empty()) {
+        throw std::invalid_argument("Не передан идентификатор трека для воспроизведения.");
     }
 
+    const std::string stream_url = track_stream_resolver_.resolve_stream_url(track_id);
     audio_player_.load(stream_url);
     audio_player_.play();
 }

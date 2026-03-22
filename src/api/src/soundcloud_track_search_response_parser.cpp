@@ -1,7 +1,6 @@
 #include "soundcloud/api/soundcloud_track_search_response_parser.h"
 
 #include <cstdint>
-#include <sstream>
 #include <stdexcept>
 #include <utility>
 
@@ -22,6 +21,11 @@ std::string read_optional_string_field(const json& object, const char* field_nam
 }
 
 std::string read_track_id(const json& track_json) {
+    const std::string track_urn = read_optional_string_field(track_json, "urn");
+    if (!track_urn.empty()) {
+        return track_urn;
+    }
+
     const auto id_iterator = track_json.find("id");
     if (id_iterator == track_json.end()) {
         return {};
@@ -64,18 +68,7 @@ std::string select_artist_name(const json& track_json) {
     return "Неизвестный артист";
 }
 
-std::string append_client_id_to_url(const std::string& url, const std::string& client_id) {
-    if (url.empty()) {
-        return {};
-    }
-
-    const char separator = url.find('?') == std::string::npos ? '?' : '&';
-    std::ostringstream stream_url;
-    stream_url << url << separator << "client_id=" << client_id;
-    return stream_url.str();
-}
-
-std::string select_stream_url(const json& track_json, const std::string& client_id) {
+std::vector<track_transcoding_reference> read_transcoding_references(const json& track_json) {
     const auto media_iterator = track_json.find("media");
     if (media_iterator == track_json.end() || !media_iterator->is_object()) {
         return {};
@@ -86,21 +79,12 @@ std::string select_stream_url(const json& track_json, const std::string& client_
         return {};
     }
 
-    std::string fallback_url;
+    std::vector<track_transcoding_reference> transcodings;
+    transcodings.reserve(transcodings_iterator->size());
 
     for (const json& transcoding_json : *transcodings_iterator) {
         if (!transcoding_json.is_object() || transcoding_json.value("snipped", false)) {
             continue;
-        }
-
-        const std::string transcoding_url =
-            read_optional_string_field(transcoding_json, "url");
-        if (transcoding_url.empty()) {
-            continue;
-        }
-
-        if (fallback_url.empty()) {
-            fallback_url = transcoding_url;
         }
 
         const auto format_iterator = transcoding_json.find("format");
@@ -108,30 +92,42 @@ std::string select_stream_url(const json& track_json, const std::string& client_
             continue;
         }
 
-        if (read_optional_string_field(*format_iterator, "protocol") == "progressive") {
-            return append_client_id_to_url(transcoding_url, client_id);
+        const std::string url = read_optional_string_field(transcoding_json, "url");
+        if (url.empty()) {
+            continue;
         }
+
+        transcodings.push_back(track_transcoding_reference{
+            .url = url,
+            .protocol = read_optional_string_field(*format_iterator, "protocol"),
+            .mime_type = read_optional_string_field(*format_iterator, "mime_type"),
+            .is_legacy_transcoding = transcoding_json.value("is_legacy_transcoding", false),
+        });
     }
 
-    return append_client_id_to_url(fallback_url, client_id);
+    return transcodings;
 }
 
-core::domain::track map_track(const json& track_json, const std::string& client_id) {
+core::domain::track map_track(const json& track_json) {
     return core::domain::track{
         .id = read_track_id(track_json),
         .title = read_optional_string_field(track_json, "title"),
         .artist_name = select_artist_name(track_json),
-        .stream_url = select_stream_url(track_json, client_id),
+        .stream_url = {},
+    };
+}
+
+track_playback_reference map_playback_reference(const json& track_json) {
+    return track_playback_reference{
+        .track_id = read_track_id(track_json),
+        .track_authorization = read_optional_string_field(track_json, "track_authorization"),
+        .transcodings = read_transcoding_references(track_json),
     };
 }
 
 }  // namespace
 
-soundcloud_track_search_response_parser::soundcloud_track_search_response_parser(
-    std::string client_id)
-    : client_id_(std::move(client_id)) {}
-
-std::vector<core::domain::track> soundcloud_track_search_response_parser::parse(
+parsed_track_search_payload soundcloud_track_search_response_parser::parse(
     const std::string& payload) const {
     try {
         const json root_json = json::parse(payload);
@@ -141,8 +137,9 @@ std::vector<core::domain::track> soundcloud_track_search_response_parser::parse(
                 "Ответ SoundCloud API не содержит ожидаемое поле collection.");
         }
 
-        std::vector<core::domain::track> tracks;
-        tracks.reserve(collection_iterator->size());
+        parsed_track_search_payload parsed_payload;
+        parsed_payload.tracks.reserve(collection_iterator->size());
+        parsed_payload.playback_references.reserve(collection_iterator->size());
 
         for (const json& track_json : *collection_iterator) {
             if (!track_json.is_object()) {
@@ -153,15 +150,22 @@ std::vector<core::domain::track> soundcloud_track_search_response_parser::parse(
                 continue;
             }
 
-            core::domain::track track = map_track(track_json, client_id_);
+            core::domain::track track = map_track(track_json);
             if (track.id.empty() || track.title.empty()) {
                 continue;
             }
 
-            tracks.push_back(std::move(track));
+            track_playback_reference playback_reference = map_playback_reference(track_json);
+            if (playback_reference.track_authorization.empty() ||
+                playback_reference.transcodings.empty()) {
+                continue;
+            }
+
+            parsed_payload.tracks.push_back(std::move(track));
+            parsed_payload.playback_references.push_back(std::move(playback_reference));
         }
 
-        return tracks;
+        return parsed_payload;
     } catch (const json::exception& exception) {
         throw std::runtime_error(
             std::string("Не удалось разобрать JSON-ответ SoundCloud API: ") +

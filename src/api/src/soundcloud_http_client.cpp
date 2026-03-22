@@ -215,6 +215,30 @@ std::string soundcloud_http_client::fetch_search_tracks_payload(const std::strin
     return perform_get_request(path.str());
 }
 
+std::string soundcloud_http_client::fetch_transcoding_payload(
+    const std::string& transcoding_url,
+    const std::string& track_authorization) const {
+    if (transcoding_url.empty()) {
+        throw std::invalid_argument("Не передан transcoding URL для playback.");
+    }
+
+    if (track_authorization.empty()) {
+        throw std::invalid_argument("Не передан track_authorization для playback.");
+    }
+
+    const std::string expected_prefix = "https://" + configuration_.api_host;
+    if (!transcoding_url.starts_with(expected_prefix)) {
+        throw std::runtime_error("Transcoding URL использует неожиданный host.");
+    }
+
+    std::ostringstream path;
+    path << transcoding_url.substr(expected_prefix.size())
+         << "?client_id=" << url_encode_component(configuration_.client_id)
+         << "&track_authorization=" << url_encode_component(track_authorization);
+
+    return perform_get_request(path.str());
+}
+
 std::string soundcloud_http_client::perform_get_request(const std::string& path_with_query) const {
 #ifndef _WIN32
     (void)path_with_query;

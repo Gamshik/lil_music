@@ -1,6 +1,7 @@
 add_library(soundcloud_api
     src/soundcloud_http_client.cpp
     src/soundcloud_track_search_response_parser.cpp
+    src/soundcloud_transcoding_response_parser.cpp
     src/soundcloud_api_client.cpp
 )
 

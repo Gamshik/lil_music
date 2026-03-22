@@ -19,6 +19,13 @@ public:
      */
     std::string fetch_search_tracks_payload(const std::string& query) const;
 
+    /**
+     * Выполняет запрос к transcoding endpoint и получает финальный playback payload.
+     */
+    std::string fetch_transcoding_payload(
+        const std::string& transcoding_url,
+        const std::string& track_authorization) const;
+
 private:
     std::string perform_get_request(const std::string& path_with_query) const;
 

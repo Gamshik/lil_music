@@ -76,16 +76,16 @@ std::string app_bridge::build_app_info_response() const {
 
 std::string app_bridge::build_play_track_response(const std::string& request_json) const {
     try {
-        const std::string stream_url = bridge_json_codec::read_string_field_from_first_argument(
-                                           request_json,
-                                           "streamUrl")
-                                           .value_or("");
+        const std::string track_id = bridge_json_codec::read_string_field_from_first_argument(
+                                         request_json,
+                                         "trackId")
+                                         .value_or("");
         const std::string track_title = bridge_json_codec::read_string_field_from_first_argument(
                                             request_json,
                                             "title")
                                             .value_or("Без названия");
 
-        play_track_use_case_.execute(stream_url);
+        play_track_use_case_.execute(track_id);
 
         std::ostringstream response;
         response << R"({"ok":true,"trackTitle":)" << bridge_json_codec::escape_string(track_title)

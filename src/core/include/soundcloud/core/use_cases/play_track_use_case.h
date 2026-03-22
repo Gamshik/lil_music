@@ -3,6 +3,7 @@
 #include <string>
 
 #include "soundcloud/core/ports/i_audio_player.h"
+#include "soundcloud/core/ports/i_track_stream_resolver.h"
 
 namespace soundcloud::core::use_cases {
 
@@ -12,14 +13,17 @@ namespace soundcloud::core::use_cases {
  */
 class play_track_use_case {
 public:
-    explicit play_track_use_case(ports::i_audio_player& audio_player);
+    play_track_use_case(
+        const ports::i_track_stream_resolver& track_stream_resolver,
+        ports::i_audio_player& audio_player);
 
     /**
-     * Загружает поток и запускает воспроизведение.
+     * Разрешает playback URL по track id и запускает воспроизведение.
      */
-    void execute(const std::string& stream_url) const;
+    void execute(const std::string& track_id) const;
 
 private:
+    const ports::i_track_stream_resolver& track_stream_resolver_;
     ports::i_audio_player& audio_player_;
 };
 

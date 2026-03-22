@@ -63,13 +63,13 @@ function renderTracks(tracks) {
     playButtonElement.className = "play-button";
     playButtonElement.type = "button";
     playButtonElement.dataset.action = "play-track";
-    playButtonElement.dataset.streamUrl = track.streamUrl;
+    playButtonElement.dataset.trackId = track.id;
     playButtonElement.dataset.title = track.title;
     playButtonElement.textContent = "Играть";
 
     titleElement.textContent = track.title;
     artistElement.textContent = track.artistName;
-    idElement.textContent = `id: ${track.id}`;
+    idElement.textContent = "Playback URL будет разрешён через native API по track URN.";
 
     actionsElement.append(playButtonElement);
     articleElement.append(titleElement, artistElement, idElement, actionsElement);
@@ -134,12 +134,12 @@ async function handleTrackListClick(event) {
     return;
   }
 
-  const streamUrl = playButtonElement.dataset.streamUrl || "";
+  const trackId = playButtonElement.dataset.trackId || "";
   const title = playButtonElement.dataset.title || "Без названия";
   setPlaybackStatus("Подготовка...", `Запрашиваем native playback для: ${title}`);
 
   try {
-    const response = normalizeBridgePayload(await window.playTrack({ streamUrl, title }));
+    const response = normalizeBridgePayload(await window.playTrack({ trackId, title }));
     if (response?.ok === false) {
       throw new Error(response.message || "Не удалось запустить воспроизведение.");
     }

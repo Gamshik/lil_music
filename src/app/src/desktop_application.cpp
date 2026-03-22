@@ -26,7 +26,7 @@ api::soundcloud_api_configuration build_soundcloud_api_configuration() {
 desktop_application::desktop_application()
     : api_client_(build_soundcloud_api_configuration()),
       bridge_(
-          core::use_cases::play_track_use_case(audio_player_),
+          core::use_cases::play_track_use_case(api_client_, audio_player_),
           core::use_cases::pause_playback_use_case(audio_player_),
           core::use_cases::search_tracks_use_case(api_client_),
           core::use_cases::toggle_favorite_use_case(library_repository_)) {}
