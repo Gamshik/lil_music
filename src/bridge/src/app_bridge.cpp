@@ -1,5 +1,6 @@
 #include "soundcloud/bridge/app_bridge.h"
 
+#include <exception>
 #include <sstream>
 #include <utility>
 
@@ -60,27 +61,31 @@ std::string app_bridge::build_app_info_response() const {
 }
 
 std::string app_bridge::build_search_tracks_response(const std::string& request_json) const {
-    const std::string query = bridge_json_codec::read_string_field_from_first_argument(
-                                  request_json,
-                                  "query")
-                                  .value_or("");
+    try {
+        const std::string query = bridge_json_codec::read_string_field_from_first_argument(
+                                      request_json,
+                                      "query")
+                                      .value_or("");
 
-    const std::vector<core::domain::track> tracks = search_tracks_use_case_.execute(query);
+        const std::vector<core::domain::track> tracks = search_tracks_use_case_.execute(query);
 
-    std::ostringstream response;
-    response << R"({"ok":true,"query":)" << bridge_json_codec::escape_string(query)
-             << R"(,"tracks":[)";
+        std::ostringstream response;
+        response << R"({"ok":true,"query":)" << bridge_json_codec::escape_string(query)
+                 << R"(,"tracks":[)";
 
-    for (std::size_t index = 0; index < tracks.size(); ++index) {
-        if (index != 0) {
-            response << ',';
+        for (std::size_t index = 0; index < tracks.size(); ++index) {
+            if (index != 0) {
+                response << ',';
+            }
+
+            response << serialize_track(tracks[index]);
         }
 
-        response << serialize_track(tracks[index]);
+        response << "]}";
+        return response.str();
+    } catch (const std::exception& exception) {
+        return build_error_response(exception.what());
     }
-
-    response << "]}";
-    return response.str();
 }
 
 std::string app_bridge::build_toggle_favorite_response(const std::string& request_json) const {

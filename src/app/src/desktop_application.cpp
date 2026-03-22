@@ -3,14 +3,26 @@
 #include <exception>
 #include <iostream>
 
+#include "soundcloud/api/soundcloud_api_configuration.h"
 #include "soundcloud/core/use_cases/search_tracks_use_case.h"
 #include "soundcloud/core/use_cases/toggle_favorite_use_case.h"
 #include "soundcloud/platform/window_configuration.h"
 
 namespace soundcloud::app {
+namespace {
+
+api::soundcloud_api_configuration build_soundcloud_api_configuration() {
+    return api::soundcloud_api_configuration{
+        .api_host = "api-v2.soundcloud.com",
+        .client_id = "IvZsSdfTxP6ovYz9Nn4XGqmQVKs1vzbB",
+        .search_limit = 10,
+    };
+}
+
+}  // namespace
 
 desktop_application::desktop_application()
-    : api_client_("replace_with_client_id"),
+    : api_client_(build_soundcloud_api_configuration()),
       bridge_(
           core::use_cases::search_tracks_use_case(api_client_),
           core::use_cases::toggle_favorite_use_case(library_repository_)) {}

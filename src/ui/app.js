@@ -86,6 +86,10 @@ async function handleSearchSubmit(event) {
 
   try {
     const response = normalizeBridgePayload(await window.searchTracks({ query }));
+    if (response?.ok === false) {
+      throw new Error(response.message || "Поиск через bridge завершился ошибкой.");
+    }
+
     const tracks = Array.isArray(response.tracks) ? response.tracks : [];
 
     searchSummaryElement.textContent = `Native bridge обработал запрос "${response.query}" и вернул ${tracks.length} трек(ов).`;
