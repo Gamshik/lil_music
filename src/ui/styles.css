@@ -86,6 +86,12 @@ h1 {
   display: block;
 }
 
+.status-divider {
+  height: 1px;
+  margin: 16px 0;
+  background: rgba(94, 71, 50, 0.12);
+}
+
 .status-label {
   margin-bottom: 8px;
   font-size: 0.8rem;
@@ -103,6 +109,23 @@ h1 {
 
 .status-meta {
   color: var(--muted);
+}
+
+.secondary-button {
+  min-height: 44px;
+  margin-top: 16px;
+  padding: 0 16px;
+  border: 1px solid rgba(94, 71, 50, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.secondary-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .search-panel {
@@ -167,6 +190,23 @@ h1 {
   border-radius: 20px;
   background: var(--surface-strong);
   border: 1px solid rgba(94, 71, 50, 0.08);
+}
+
+.track-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.play-button {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ff8a3d 0%, #d45500 100%);
+  color: #fffaf4;
+  font: inherit;
+  cursor: pointer;
 }
 
 .track-card-empty {
