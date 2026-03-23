@@ -27,6 +27,10 @@ void audio_player_service::pause() {
     backend_->pause();
 }
 
+void audio_player_service::seek_to(const std::int64_t position_ms) {
+    backend_->seek_to(position_ms);
+}
+
 core::domain::playback_state audio_player_service::get_playback_state() const {
     return backend_->get_playback_state();
 }

@@ -54,6 +54,7 @@ app_bridge::app_bridge(
     core::use_cases::play_track_use_case play_track_use_case,
     core::use_cases::pause_playback_use_case pause_playback_use_case,
     core::use_cases::resume_playback_use_case resume_playback_use_case,
+    core::use_cases::seek_playback_use_case seek_playback_use_case,
     core::use_cases::search_tracks_use_case search_tracks_use_case,
     core::use_cases::toggle_favorite_use_case toggle_favorite_use_case)
     : get_playback_state_use_case_(std::move(get_playback_state_use_case)),
@@ -61,6 +62,7 @@ app_bridge::app_bridge(
       play_track_use_case_(std::move(play_track_use_case)),
       pause_playback_use_case_(std::move(pause_playback_use_case)),
       resume_playback_use_case_(std::move(resume_playback_use_case)),
+      seek_playback_use_case_(std::move(seek_playback_use_case)),
       search_tracks_use_case_(std::move(search_tracks_use_case)),
       toggle_favorite_use_case_(std::move(toggle_favorite_use_case)) {}
 
@@ -95,6 +97,12 @@ std::vector<ui_binding> app_bridge::get_bindings() const {
             .handler = [this](const std::string&) { return build_resume_playback_response(); },
         },
         ui_binding{
+            .name = "seekPlayback",
+            .handler = [this](const std::string& request_json) {
+                return build_seek_playback_response(request_json);
+            },
+        },
+        ui_binding{
             .name = "searchTracks",
             .handler = [this](const std::string& request_json) {
                 return build_search_tracks_response(request_json);
@@ -126,6 +134,8 @@ std::string app_bridge::build_get_playback_state_response() const {
                  << bridge_json_codec::escape_string(playback_state.error_message)
                  << R"(,"positionMs":)" << playback_state.position_ms
                  << R"(,"durationMs":)" << playback_state.duration_ms
+                 << R"(,"trackId":)"
+                 << bridge_json_codec::escape_string(current_track_id_)
                  << R"(,"trackTitle":)"
                  << bridge_json_codec::escape_string(current_track_title_)
                  << '}';
@@ -174,9 +184,11 @@ std::string app_bridge::build_play_track_response(const std::string& request_jso
 
         play_track_use_case_.execute(track_id);
         current_track_title_ = track_title;
+        current_track_id_ = track_id;
 
         std::ostringstream response;
         response << R"({"ok":true,"trackTitle":)" << bridge_json_codec::escape_string(track_title)
+                 << R"(,"trackId":)" << bridge_json_codec::escape_string(track_id)
                  << R"(,"state":"playing"})";
         return response.str();
     } catch (const std::exception& exception) {
@@ -199,6 +211,23 @@ std::string app_bridge::build_resume_playback_response() const {
         std::ostringstream response;
         response << R"({"ok":true,"state":"playing","trackTitle":)"
                  << bridge_json_codec::escape_string(current_track_title_)
+                 << '}';
+        return response.str();
+    } catch (const std::exception& exception) {
+        return build_error_response(exception.what());
+    }
+}
+
+std::string app_bridge::build_seek_playback_response(const std::string& request_json) const {
+    try {
+        const int position_ms =
+            bridge_json_codec::read_integer_field_from_first_argument(request_json, "positionMs")
+                .value_or(0);
+        seek_playback_use_case_.execute(position_ms);
+
+        std::ostringstream response;
+        response << R"({"ok":true,"positionMs":)" << position_ms
+                 << R"(,"trackId":)" << bridge_json_codec::escape_string(current_track_id_)
                  << '}';
         return response.str();
     } catch (const std::exception& exception) {

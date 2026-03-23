@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -37,6 +38,11 @@ public:
      * Переводит плеер в состояние паузы.
      */
     void pause() override;
+
+    /**
+     * Перематывает текущий трек к указанной позиции.
+     */
+    void seek_to(std::int64_t position_ms) override;
 
     /**
      * Возвращает текущее состояние Media Foundation backend в доменном формате.

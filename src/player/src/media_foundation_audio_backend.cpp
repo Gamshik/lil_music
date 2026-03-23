@@ -295,6 +295,28 @@ public:
         playback_state_.error_message.clear();
     }
 
+    void seek_to(const std::int64_t position_ms) {
+        std::scoped_lock lock(state_mutex_);
+
+        if (current_stream_url_.empty() || !media_item_ready_) {
+            throw std::runtime_error("Нельзя перемотать трек, пока плеер не загрузил аудиопоток.");
+        }
+
+        PROPVARIANT position_value;
+        PropVariantInit(&position_value);
+        position_value.vt = VT_I8;
+        position_value.hVal.QuadPart = (std::max)(position_ms, static_cast<std::int64_t>(0)) * 10000;
+
+        const HRESULT set_position_result = media_player_.get()->SetPosition(
+            MFP_POSITIONTYPE_100NS,
+            &position_value);
+        PropVariantClear(&position_value);
+
+        throw_if_failed(set_position_result, "Перемотка воспроизведения");
+        playback_state_.position_ms = position_ms;
+        playback_state_.error_message.clear();
+    }
+
     [[nodiscard]] core::domain::playback_state get_playback_state() const {
         std::scoped_lock lock(state_mutex_);
         core::domain::playback_state playback_state = playback_state_;
@@ -491,6 +513,10 @@ void media_foundation_audio_backend::play() {
 
 void media_foundation_audio_backend::pause() {
     implementation_->pause();
+}
+
+void media_foundation_audio_backend::seek_to(const std::int64_t position_ms) {
+    implementation_->seek_to(position_ms);
 }
 
 core::domain::playback_state media_foundation_audio_backend::get_playback_state() const {

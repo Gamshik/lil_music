@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -24,6 +25,7 @@ public:
     void load(const std::string& stream_url);
     void play();
     void pause();
+    void seek_to(std::int64_t position_ms);
     [[nodiscard]] core::domain::playback_state get_playback_state() const;
 
     std::unique_ptr<implementation> implementation_;

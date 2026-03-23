@@ -137,6 +137,7 @@ h1 {
   height: 8px;
   border-radius: 999px;
   background: rgba(94, 71, 50, 0.12);
+  cursor: pointer;
 }
 
 .progress-fill {

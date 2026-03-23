@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 #include "soundcloud/core/domain/playback_state.h"
@@ -28,6 +29,11 @@ public:
      * Ставит воспроизведение на паузу.
      */
     virtual void pause() = 0;
+
+    /**
+     * Перематывает текущее воспроизведение к заданной позиции.
+     */
+    virtual void seek_to(std::int64_t position_ms) = 0;
 
     /**
      * Возвращает текущее нормализованное состояние плеера.
