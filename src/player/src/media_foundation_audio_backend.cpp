@@ -141,6 +141,20 @@ std::int64_t convert_100ns_to_milliseconds(const std::int64_t value_100ns) {
     return value_100ns > 0 ? value_100ns / 10000 : 0;
 }
 
+std::uint64_t read_media_item_request_token(IMFPMediaItem* media_item) {
+    if (media_item == nullptr) {
+        return 0;
+    }
+
+    DWORD_PTR user_data = 0;
+    const HRESULT get_user_data_result = media_item->GetUserData(&user_data);
+    if (FAILED(get_user_data_result)) {
+        return 0;
+    }
+
+    return static_cast<std::uint64_t>(user_data);
+}
+
 class media_player_callback final : public IMFPMediaPlayerCallback {
 public:
     explicit media_player_callback(class media_foundation_audio_backend::implementation& owner)
@@ -232,7 +246,9 @@ public:
         const std::wstring wide_stream_url = utf8_to_utf16(stream_url);
 
         std::scoped_lock lock(state_mutex_);
+        const std::uint64_t request_token = ++last_request_token_;
         pending_stream_url_ = stream_url;
+        pending_request_token_ = request_token;
         current_stream_url_.clear();
         media_item_ready_ = false;
         should_start_playback_when_ready_ = false;
@@ -245,7 +261,7 @@ public:
         const HRESULT create_item_result = media_player_.get()->CreateMediaItemFromURL(
             wide_stream_url.c_str(),
             FALSE,
-            0,
+            static_cast<DWORD_PTR>(request_token),
             nullptr);
         if (FAILED(create_item_result)) {
             playback_state_.status = core::domain::playback_status::error;
@@ -375,6 +391,17 @@ private:
             return;
         }
 
+        const std::uint64_t request_token = static_cast<std::uint64_t>(event_data->dwUserData);
+        bool is_expected_request = false;
+        {
+            std::scoped_lock lock(state_mutex_);
+            is_expected_request = request_token == pending_request_token_;
+        }
+
+        if (!is_expected_request) {
+            return;
+        }
+
         throw_if_failed(event_data->header.hrEvent, "Создание media item");
         throw_if_failed(
             media_player_.get()->SetMediaItem(event_data->pMediaItem),
@@ -386,6 +413,18 @@ private:
             return;
         }
 
+        const std::uint64_t media_item_request_token =
+            read_media_item_request_token(event_data->pMediaItem);
+        std::uint64_t expected_request_token = 0;
+        {
+            std::scoped_lock lock(state_mutex_);
+            expected_request_token = pending_request_token_;
+        }
+
+        if (media_item_request_token != 0 && media_item_request_token != expected_request_token) {
+            return;
+        }
+
         throw_if_failed(event_data->header.hrEvent, "Применение media item");
 
         bool should_play = false;
@@ -393,6 +432,8 @@ private:
             std::scoped_lock lock(state_mutex_);
             current_stream_url_ = pending_stream_url_;
             pending_stream_url_.clear();
+            active_request_token_ =
+                media_item_request_token == 0 ? expected_request_token : media_item_request_token;
             media_item_ready_ = true;
             playback_state_.stream_url = current_stream_url_;
             should_play = should_start_playback_when_ready_;
@@ -490,6 +531,9 @@ private:
     std::string pending_stream_url_;
     std::string current_stream_url_;
     std::string last_error_message_;
+    std::uint64_t pending_request_token_ = 0;
+    std::uint64_t active_request_token_ = 0;
+    std::uint64_t last_request_token_ = 0;
     core::domain::playback_state playback_state_{};
     bool should_start_playback_when_ready_ = false;
     bool media_item_ready_ = false;
