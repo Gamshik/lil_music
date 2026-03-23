@@ -239,6 +239,8 @@ public:
         playback_state_.status = core::domain::playback_status::loading;
         playback_state_.stream_url = stream_url;
         playback_state_.error_message.clear();
+        playback_state_.position_ms = 0;
+        playback_state_.duration_ms = 0;
 
         const HRESULT create_item_result = media_player_.get()->CreateMediaItemFromURL(
             wide_stream_url.c_str(),
@@ -412,6 +414,7 @@ private:
         std::scoped_lock lock(state_mutex_);
         playback_state_.status = core::domain::playback_status::idle;
         playback_state_.position_ms = playback_state_.duration_ms;
+        ++playback_state_.completion_token;
     }
 
     void update_status(const core::domain::playback_status status) {

@@ -26,6 +26,7 @@ let latestPlaybackState = {
   state: "idle",
   positionMs: 0,
   durationMs: 0,
+  completionToken: 0,
   trackId: "",
   trackTitle: "",
 };
@@ -205,11 +206,10 @@ function hasPlaybackEnded(previousState, nextState) {
     return false;
   }
 
-  const wasActive = ["loading", "playing", "paused"].includes(previousState.state);
-  const isNowIdle = nextState.state === "idle";
-  const completedTrack = nextState.durationMs > 0 && nextState.positionMs >= nextState.durationMs - 1000;
-
-  return wasActive && isNowIdle && completedTrack && Boolean(nextState.trackId || previousState.trackId);
+  return (
+    nextState.completionToken > previousState.completionToken &&
+    Boolean(nextState.trackId || previousState.trackId)
+  );
 }
 
 async function playTrackById(trackId, title) {
@@ -270,6 +270,7 @@ async function refreshPlaybackState() {
       state: response.state || "idle",
       positionMs: response.positionMs || 0,
       durationMs: response.durationMs || 0,
+      completionToken: response.completionToken || 0,
       trackId: response.trackId || currentTrackId,
       trackTitle: response.trackTitle || currentTrackTitle,
     };
