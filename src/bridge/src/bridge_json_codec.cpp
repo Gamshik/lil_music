@@ -1,7 +1,9 @@
 #include "soundcloud/bridge/bridge_json_codec.h"
 
 #include <cctype>
+#include <limits>
 #include <sstream>
+#include <stdexcept>
 #include <string_view>
 
 namespace soundcloud::bridge {
@@ -24,6 +26,20 @@ public:
         }
 
         return read_string_field_from_object(field_name);
+    }
+
+    std::optional<int> read_integer_field_from_first_argument(const std::string& field_name) {
+        skip_whitespace();
+        if (!consume('[')) {
+            return std::nullopt;
+        }
+
+        skip_whitespace();
+        if (consume(']')) {
+            return std::nullopt;
+        }
+
+        return read_integer_field_from_object(field_name);
     }
 
 private:
@@ -51,6 +67,51 @@ private:
             skip_whitespace();
             if (*key == field_name) {
                 return parse_string();
+            }
+
+            if (!skip_value()) {
+                return std::nullopt;
+            }
+
+            skip_whitespace();
+            if (consume('}')) {
+                return std::nullopt;
+            }
+
+            if (!consume(',')) {
+                return std::nullopt;
+            }
+
+            skip_whitespace();
+        }
+
+        return std::nullopt;
+    }
+
+    std::optional<int> read_integer_field_from_object(const std::string& field_name) {
+        if (!consume('{')) {
+            return std::nullopt;
+        }
+
+        skip_whitespace();
+        if (consume('}')) {
+            return std::nullopt;
+        }
+
+        while (!is_end()) {
+            const std::optional<std::string> key = parse_string();
+            if (!key.has_value()) {
+                return std::nullopt;
+            }
+
+            skip_whitespace();
+            if (!consume(':')) {
+                return std::nullopt;
+            }
+
+            skip_whitespace();
+            if (*key == field_name) {
+                return parse_integer();
             }
 
             if (!skip_value()) {
@@ -127,6 +188,60 @@ private:
         }
 
         return std::nullopt;
+    }
+
+    std::optional<int> parse_integer() {
+        if (peek('"')) {
+            const std::optional<std::string> integer_as_string = parse_string();
+            if (!integer_as_string.has_value() || integer_as_string->empty()) {
+                return std::nullopt;
+            }
+
+            try {
+                std::size_t parsed_length = 0;
+                const long long parsed_value =
+                    std::stoll(*integer_as_string, &parsed_length, 10);
+                if (parsed_length != integer_as_string->size() ||
+                    parsed_value < std::numeric_limits<int>::min() ||
+                    parsed_value > std::numeric_limits<int>::max()) {
+                    return std::nullopt;
+                }
+
+                return static_cast<int>(parsed_value);
+            } catch (const std::exception&) {
+                return std::nullopt;
+            }
+        }
+
+        const std::size_t token_begin = position_;
+        if (peek('-')) {
+            ++position_;
+        }
+
+        if (!skip_digits()) {
+            position_ = token_begin;
+            return std::nullopt;
+        }
+
+        if (peek('.') || peek('e') || peek('E')) {
+            position_ = token_begin;
+            return std::nullopt;
+        }
+
+        try {
+            const long long parsed_value =
+                std::stoll(source_.substr(token_begin, position_ - token_begin));
+            if (parsed_value < std::numeric_limits<int>::min() ||
+                parsed_value > std::numeric_limits<int>::max()) {
+                position_ = token_begin;
+                return std::nullopt;
+            }
+
+            return static_cast<int>(parsed_value);
+        } catch (const std::exception&) {
+            position_ = token_begin;
+            return std::nullopt;
+        }
     }
 
     bool skip_value() {
@@ -365,6 +480,13 @@ std::optional<std::string> bridge_json_codec::read_string_field_from_first_argum
     const std::string& field_name) {
     json_reader reader(request_json);
     return reader.read_string_field_from_first_argument(field_name);
+}
+
+std::optional<int> bridge_json_codec::read_integer_field_from_first_argument(
+    const std::string& request_json,
+    const std::string& field_name) {
+    json_reader reader(request_json);
+    return reader.read_integer_field_from_first_argument(field_name);
 }
 
 }  // namespace soundcloud::bridge

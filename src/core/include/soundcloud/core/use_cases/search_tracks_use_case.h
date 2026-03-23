@@ -1,9 +1,9 @@
 #pragma once
 
-#include <string>
 #include <vector>
 
 #include "soundcloud/core/domain/track.h"
+#include "soundcloud/core/domain/track_search_request.h"
 #include "soundcloud/core/ports/i_track_catalog.h"
 
 namespace soundcloud::core::use_cases {
@@ -17,9 +17,9 @@ public:
     explicit search_tracks_use_case(const ports::i_track_catalog& track_catalog);
 
     /**
-     * Выполняет поиск по очищенному пользовательскому запросу.
+     * Выполняет поиск по нормализованным параметрам запроса.
      */
-    std::vector<domain::track> execute(const std::string& query) const;
+    std::vector<domain::track> execute(const domain::track_search_request& request) const;
 
 private:
     const ports::i_track_catalog& track_catalog_;

@@ -196,7 +196,8 @@ std::string build_http_error_message(const DWORD status_code, const std::string&
 soundcloud_http_client::soundcloud_http_client(soundcloud_api_configuration configuration)
     : configuration_(std::move(configuration)) {}
 
-std::string soundcloud_http_client::fetch_search_tracks_payload(const std::string& query) const {
+std::string soundcloud_http_client::fetch_search_tracks_payload(
+    const core::domain::track_search_request& request) const {
     if (configuration_.api_host.empty()) {
         throw std::runtime_error("Не задан host публичного SoundCloud API.");
     }
@@ -205,12 +206,17 @@ std::string soundcloud_http_client::fetch_search_tracks_payload(const std::strin
         throw std::runtime_error("Не задан client_id публичного SoundCloud API.");
     }
 
-    const int normalized_limit = configuration_.search_limit > 0 ? configuration_.search_limit : 10;
+    const int normalized_limit =
+        request.limit > 0
+            ? request.limit
+            : (configuration_.default_search_limit > 0 ? configuration_.default_search_limit : 24);
+    const int normalized_offset = (std::max)(request.offset, 0);
 
     std::ostringstream path;
-    path << "/search/tracks?q=" << url_encode_component(query)
+    path << "/search/tracks?q=" << url_encode_component(request.query)
          << "&client_id=" << url_encode_component(configuration_.client_id)
-         << "&limit=" << normalized_limit;
+         << "&limit=" << normalized_limit
+         << "&offset=" << normalized_offset;
 
     return perform_get_request(path.str());
 }

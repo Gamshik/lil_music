@@ -8,9 +8,10 @@ namespace soundcloud::api {
 namespace {
 
 int score_transcoding(const track_transcoding_reference& transcoding) {
-    if (transcoding.protocol == "hls" &&
-        transcoding.mime_type == "audio/mpegurl" &&
-        !transcoding.is_legacy_transcoding) {
+    // Текущий backend построен на MFPlay.
+    // Для него прямой MP3-поток надёжнее HLS-плейлистов, поэтому
+    // сначала пробуем progressive audio/mpeg, а уже потом HLS-варианты.
+    if (transcoding.protocol == "progressive" && transcoding.mime_type == "audio/mpeg") {
         return 0;
     }
 
@@ -18,7 +19,9 @@ int score_transcoding(const track_transcoding_reference& transcoding) {
         return 1;
     }
 
-    if (transcoding.protocol == "progressive" && transcoding.mime_type == "audio/mpeg") {
+    if (transcoding.protocol == "hls" &&
+        transcoding.mime_type == "audio/mpegurl" &&
+        !transcoding.is_legacy_transcoding) {
         return 2;
     }
 
@@ -37,8 +40,8 @@ soundcloud_api_client::soundcloud_api_client(soundcloud_api_configuration config
       track_search_response_parser_() {}
 
 std::vector<core::domain::track> soundcloud_api_client::search_tracks(
-    const std::string& query) const {
-    const std::string payload = http_client_.fetch_search_tracks_payload(query);
+    const core::domain::track_search_request& request) const {
+    const std::string payload = http_client_.fetch_search_tracks_payload(request);
     parsed_track_search_payload parsed_payload = track_search_response_parser_.parse(payload);
 
     {

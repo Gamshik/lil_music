@@ -3,6 +3,7 @@
 #include <string>
 
 #include "soundcloud/api/soundcloud_api_configuration.h"
+#include "soundcloud/core/domain/track_search_request.h"
 
 namespace soundcloud::api {
 
@@ -17,7 +18,7 @@ public:
     /**
      * Выполняет запрос поиска треков через api-v2.soundcloud.com.
      */
-    std::string fetch_search_tracks_payload(const std::string& query) const;
+    std::string fetch_search_tracks_payload(const core::domain::track_search_request& request) const;
 
     /**
      * Выполняет запрос к transcoding endpoint и получает финальный playback payload.

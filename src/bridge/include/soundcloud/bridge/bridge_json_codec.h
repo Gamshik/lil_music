@@ -23,6 +23,14 @@ public:
     static std::optional<std::string> read_string_field_from_first_argument(
         const std::string& request_json,
         const std::string& field_name);
+
+    /**
+     * Читает целочисленное поле из первого аргумента bridge-вызова.
+     * Ожидаемый формат: `[{"fieldName":123}]`.
+     */
+    static std::optional<int> read_integer_field_from_first_argument(
+        const std::string& request_json,
+        const std::string& field_name);
 };
 
 }  // namespace soundcloud::bridge

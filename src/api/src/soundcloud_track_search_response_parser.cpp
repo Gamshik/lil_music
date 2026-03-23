@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 
 #include "nlohmann/json.hpp"
@@ -68,6 +69,42 @@ std::string select_artist_name(const json& track_json) {
     return "Неизвестный артист";
 }
 
+std::string upscale_soundcloud_artwork(const std::string& artwork_url) {
+    constexpr std::string_view large_marker = "-large.";
+    constexpr std::string_view preferred_marker = "-t500x500.";
+
+    const std::size_t marker_position = artwork_url.find(large_marker);
+    if (marker_position == std::string::npos) {
+        return artwork_url;
+    }
+
+    std::string preferred_artwork_url = artwork_url;
+    preferred_artwork_url.replace(
+        marker_position,
+        large_marker.size(),
+        preferred_marker);
+    return preferred_artwork_url;
+}
+
+std::string select_artwork_url(const json& track_json) {
+    const std::string track_artwork_url =
+        upscale_soundcloud_artwork(read_optional_string_field(track_json, "artwork_url"));
+    if (!track_artwork_url.empty()) {
+        return track_artwork_url;
+    }
+
+    const auto user_iterator = track_json.find("user");
+    if (user_iterator != track_json.end() && user_iterator->is_object()) {
+        const std::string avatar_url =
+            upscale_soundcloud_artwork(read_optional_string_field(*user_iterator, "avatar_url"));
+        if (!avatar_url.empty()) {
+            return avatar_url;
+        }
+    }
+
+    return {};
+}
+
 std::vector<track_transcoding_reference> read_transcoding_references(const json& track_json) {
     const auto media_iterator = track_json.find("media");
     if (media_iterator == track_json.end() || !media_iterator->is_object()) {
@@ -113,6 +150,7 @@ core::domain::track map_track(const json& track_json) {
         .id = read_track_id(track_json),
         .title = read_optional_string_field(track_json, "title"),
         .artist_name = select_artist_name(track_json),
+        .artwork_url = select_artwork_url(track_json),
         .stream_url = {},
     };
 }

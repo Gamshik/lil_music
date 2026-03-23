@@ -5,6 +5,7 @@
 #include "soundcloud/bridge/i_ui_bridge.h"
 #include "soundcloud/core/use_cases/pause_playback_use_case.h"
 #include "soundcloud/core/use_cases/play_track_use_case.h"
+#include "soundcloud/core/use_cases/resume_playback_use_case.h"
 #include "soundcloud/core/use_cases/search_tracks_use_case.h"
 #include "soundcloud/core/use_cases/toggle_favorite_use_case.h"
 
@@ -19,6 +20,7 @@ public:
     app_bridge(
         core::use_cases::play_track_use_case play_track_use_case,
         core::use_cases::pause_playback_use_case pause_playback_use_case,
+        core::use_cases::resume_playback_use_case resume_playback_use_case,
         core::use_cases::search_tracks_use_case search_tracks_use_case,
         core::use_cases::toggle_favorite_use_case toggle_favorite_use_case);
 
@@ -31,11 +33,13 @@ private:
     std::string build_app_info_response() const;
     std::string build_play_track_response(const std::string& request_json) const;
     std::string build_pause_playback_response() const;
+    std::string build_resume_playback_response() const;
     std::string build_search_tracks_response(const std::string& request_json) const;
     std::string build_toggle_favorite_response(const std::string& request_json) const;
 
     core::use_cases::play_track_use_case play_track_use_case_;
     core::use_cases::pause_playback_use_case pause_playback_use_case_;
+    core::use_cases::resume_playback_use_case resume_playback_use_case_;
     core::use_cases::search_tracks_use_case search_tracks_use_case_;
     core::use_cases::toggle_favorite_use_case toggle_favorite_use_case_;
 };

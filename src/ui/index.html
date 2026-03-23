@@ -12,10 +12,10 @@
         <p class="eyebrow">SoundCloud Desktop</p>
         <div class="hero-header">
           <div>
-            <h1>Desktop shell уже живой, теперь UI общается с native bridge.</h1>
+            <h1>Desktop shell уже живой, а поиск и playback идут через native bridge.</h1>
             <p class="description">
-              Этот экран подтверждает, что web-layer запущен внутри desktop-приложения и
-              может вызывать C++ сценарии через изолированный bridge.
+              Поиск работает через `api-v2.soundcloud.com`, а карточки треков приходят в web-layer
+              уже из C++ сценариев. Это базовая площадка для дальнейшего desktop-клиента.
             </p>
           </div>
           <div class="status-card">
@@ -27,7 +27,7 @@
             <span class="status-label">Playback</span>
             <strong id="playback-status">Остановлено</strong>
             <span id="current-track" class="status-meta">Трек ещё не выбран</span>
-            <button id="pause-playback-button" class="secondary-button" type="button" disabled>
+            <button id="playback-toggle-button" class="secondary-button" type="button" disabled>
               Пауза
             </button>
           </div>
@@ -36,7 +36,11 @@
 
       <section class="search-panel">
         <form id="search-form" class="search-form">
-          <label class="search-label" for="search-query">Поиск треков</label>
+          <div class="search-form-header">
+            <label class="search-label" for="search-query">Поиск треков</label>
+            <p class="search-hint">UI передаёт в native `query`, `limit` и `offset`.</p>
+          </div>
+
           <div class="search-controls">
             <input
               id="search-query"
@@ -47,10 +51,22 @@
             />
             <button type="submit">Искать через bridge</button>
           </div>
+
+          <div class="search-parameters">
+            <label class="parameter-field" for="search-limit">
+              <span>Лимит</span>
+              <input id="search-limit" name="limit" type="number" min="1" max="50" value="24" />
+            </label>
+
+            <label class="parameter-field" for="search-offset">
+              <span>Смещение</span>
+              <input id="search-offset" name="offset" type="number" min="0" step="1" value="0" />
+            </label>
+          </div>
         </form>
 
         <div id="search-summary" class="search-summary">
-          Введи запрос, и UI отправит его в C++ слой через `window.searchTracks(...)`.
+          Введи запрос и настрой pagination, после чего UI отправит параметры в `window.searchTracks(...)`.
         </div>
 
         <ul id="tracks-list" class="tracks-list"></ul>

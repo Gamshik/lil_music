@@ -29,7 +29,8 @@ public:
     /**
      * Ищет публичные треки через внешний каталог.
      */
-    std::vector<core::domain::track> search_tracks(const std::string& query) const override;
+    std::vector<core::domain::track> search_tracks(
+        const core::domain::track_search_request& request) const override;
 
     /**
      * Разрешает актуальный playback URL для выбранного трека.

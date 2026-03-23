@@ -13,6 +13,7 @@ struct track {
     std::string id;
     std::string title;
     std::string artist_name;
+    std::string artwork_url;
     std::string stream_url;
 };
 

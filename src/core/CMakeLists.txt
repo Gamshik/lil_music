@@ -1,6 +1,7 @@
 add_library(soundcloud_core
     src/play_track_use_case.cpp
     src/pause_playback_use_case.cpp
+    src/resume_playback_use_case.cpp
     src/search_tracks_use_case.cpp
     src/toggle_favorite_use_case.cpp
 )

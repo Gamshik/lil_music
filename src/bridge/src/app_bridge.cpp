@@ -22,6 +22,8 @@ std::string serialize_track(const core::domain::track& track) {
                      << R"("title":)" << bridge_json_codec::escape_string(track.title) << ','
                      << R"("artistName":)" << bridge_json_codec::escape_string(track.artist_name)
                      << ','
+                     << R"("artworkUrl":)" << bridge_json_codec::escape_string(track.artwork_url)
+                     << ','
                      << R"("streamUrl":)" << bridge_json_codec::escape_string(track.stream_url)
                      << '}';
     return serialized_track.str();
@@ -32,10 +34,12 @@ std::string serialize_track(const core::domain::track& track) {
 app_bridge::app_bridge(
     core::use_cases::play_track_use_case play_track_use_case,
     core::use_cases::pause_playback_use_case pause_playback_use_case,
+    core::use_cases::resume_playback_use_case resume_playback_use_case,
     core::use_cases::search_tracks_use_case search_tracks_use_case,
     core::use_cases::toggle_favorite_use_case toggle_favorite_use_case)
     : play_track_use_case_(std::move(play_track_use_case)),
       pause_playback_use_case_(std::move(pause_playback_use_case)),
+      resume_playback_use_case_(std::move(resume_playback_use_case)),
       search_tracks_use_case_(std::move(search_tracks_use_case)),
       toggle_favorite_use_case_(std::move(toggle_favorite_use_case)) {}
 
@@ -54,6 +58,10 @@ std::vector<ui_binding> app_bridge::get_bindings() const {
         ui_binding{
             .name = "pausePlayback",
             .handler = [this](const std::string&) { return build_pause_playback_response(); },
+        },
+        ui_binding{
+            .name = "resumePlayback",
+            .handler = [this](const std::string&) { return build_resume_playback_response(); },
         },
         ui_binding{
             .name = "searchTracks",
@@ -105,17 +113,34 @@ std::string app_bridge::build_pause_playback_response() const {
     }
 }
 
+std::string app_bridge::build_resume_playback_response() const {
+    try {
+        resume_playback_use_case_.execute();
+        return R"({"ok":true,"state":"playing"})";
+    } catch (const std::exception& exception) {
+        return build_error_response(exception.what());
+    }
+}
+
 std::string app_bridge::build_search_tracks_response(const std::string& request_json) const {
     try {
-        const std::string query = bridge_json_codec::read_string_field_from_first_argument(
-                                      request_json,
-                                      "query")
-                                      .value_or("");
+        const core::domain::track_search_request request{
+            .query = bridge_json_codec::read_string_field_from_first_argument(request_json, "query")
+                         .value_or(""),
+            .limit = bridge_json_codec::read_integer_field_from_first_argument(request_json, "limit")
+                         .value_or(24),
+            .offset =
+                bridge_json_codec::read_integer_field_from_first_argument(request_json, "offset")
+                    .value_or(0),
+        };
 
-        const std::vector<core::domain::track> tracks = search_tracks_use_case_.execute(query);
+        const std::vector<core::domain::track> tracks = search_tracks_use_case_.execute(request);
 
         std::ostringstream response;
-        response << R"({"ok":true,"query":)" << bridge_json_codec::escape_string(query)
+        response << R"({"ok":true,"query":)"
+                 << bridge_json_codec::escape_string(request.query)
+                 << R"(,"limit":)" << request.limit
+                 << R"(,"offset":)" << request.offset
                  << R"(,"tracks":[)";
 
         for (std::size_t index = 0; index < tracks.size(); ++index) {

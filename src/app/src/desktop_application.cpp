@@ -6,6 +6,7 @@
 #include "soundcloud/api/soundcloud_api_configuration.h"
 #include "soundcloud/core/use_cases/pause_playback_use_case.h"
 #include "soundcloud/core/use_cases/play_track_use_case.h"
+#include "soundcloud/core/use_cases/resume_playback_use_case.h"
 #include "soundcloud/core/use_cases/search_tracks_use_case.h"
 #include "soundcloud/core/use_cases/toggle_favorite_use_case.h"
 #include "soundcloud/platform/window_configuration.h"
@@ -17,7 +18,7 @@ api::soundcloud_api_configuration build_soundcloud_api_configuration() {
     return api::soundcloud_api_configuration{
         .api_host = "api-v2.soundcloud.com",
         .client_id = "IvZsSdfTxP6ovYz9Nn4XGqmQVKs1vzbB",
-        .search_limit = 10,
+        .default_search_limit = 24,
     };
 }
 
@@ -28,6 +29,7 @@ desktop_application::desktop_application()
       bridge_(
           core::use_cases::play_track_use_case(api_client_, audio_player_),
           core::use_cases::pause_playback_use_case(audio_player_),
+          core::use_cases::resume_playback_use_case(audio_player_),
           core::use_cases::search_tracks_use_case(api_client_),
           core::use_cases::toggle_favorite_use_case(library_repository_)) {}
 

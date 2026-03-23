@@ -12,7 +12,7 @@ namespace soundcloud::api {
 struct soundcloud_api_configuration {
     std::string api_host;
     std::string client_id;
-    int search_limit = 10;
+    int default_search_limit = 24;
 };
 
 }  // namespace soundcloud::api
