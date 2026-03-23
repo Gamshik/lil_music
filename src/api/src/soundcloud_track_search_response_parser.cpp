@@ -145,6 +145,17 @@ std::vector<track_transcoding_reference> read_transcoding_references(const json&
     return transcodings;
 }
 
+bool has_supported_playback_transcoding(
+    const std::vector<track_transcoding_reference>& transcodings) {
+    for (const track_transcoding_reference& transcoding : transcodings) {
+        if (transcoding.protocol == "progressive" && transcoding.mime_type == "audio/mpeg") {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 core::domain::track map_track(const json& track_json) {
     return core::domain::track{
         .id = read_track_id(track_json),
@@ -195,7 +206,8 @@ parsed_track_search_payload soundcloud_track_search_response_parser::parse(
 
             track_playback_reference playback_reference = map_playback_reference(track_json);
             if (playback_reference.track_authorization.empty() ||
-                playback_reference.transcodings.empty()) {
+                playback_reference.transcodings.empty() ||
+                !has_supported_playback_transcoding(playback_reference.transcodings)) {
                 continue;
             }
 

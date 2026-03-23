@@ -36,9 +36,17 @@
                 <span id="playback-duration">0:00</span>
               </div>
             </div>
-            <button id="playback-toggle-button" class="secondary-button" type="button" disabled>
-              Пауза
-            </button>
+            <div class="playback-controls">
+              <button id="prev-track-button" class="secondary-button transport-button" type="button" disabled>
+                Prev
+              </button>
+              <button id="playback-toggle-button" class="secondary-button transport-button" type="button" disabled>
+                Пауза
+              </button>
+              <button id="next-track-button" class="secondary-button transport-button" type="button" disabled>
+                Next
+              </button>
+            </div>
           </div>
         </div>
       </section>
@@ -80,6 +88,14 @@
         <div id="search-summary" class="search-summary">
           Введи запрос и настрой pagination, после чего UI отправит параметры в `window.searchTracks(...)`.
         </div>
+
+        <section class="queue-panel">
+          <div class="queue-header">
+            <span class="search-label">Очередь</span>
+            <span id="queue-count" class="status-meta">Очередь пуста</span>
+          </div>
+          <ul id="queue-list" class="queue-list"></ul>
+        </section>
 
         <ul id="tracks-list" class="tracks-list"></ul>
       </section>

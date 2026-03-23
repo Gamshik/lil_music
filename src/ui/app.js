@@ -13,8 +13,12 @@ const playbackProgressTrackElement = document.getElementById("playback-progress-
 const playbackProgressFillElement = document.getElementById("playback-progress-fill");
 const playbackPositionElement = document.getElementById("playback-position");
 const playbackDurationElement = document.getElementById("playback-duration");
+const prevTrackButtonElement = document.getElementById("prev-track-button");
 const playbackToggleButtonElement = document.getElementById("playback-toggle-button");
+const nextTrackButtonElement = document.getElementById("next-track-button");
 const loadFeaturedButtonElement = document.getElementById("load-featured-button");
+const queueCountElement = document.getElementById("queue-count");
+const queueListElement = document.getElementById("queue-list");
 
 let currentTrackTitle = "";
 let currentTrackId = "";
@@ -22,6 +26,8 @@ let hasLoadedTrack = false;
 let isPlaybackPaused = false;
 let playbackPollingTimer = null;
 let currentRenderedTracks = [];
+let queuedTracks = [];
+let playbackHistory = [];
 let latestPlaybackState = {
   state: "idle",
   positionMs: 0,
@@ -32,6 +38,8 @@ let latestPlaybackState = {
 };
 let previousPlaybackState = null;
 let isAutoAdvancing = false;
+let isStartingPlayback = false;
+let suppressPlaybackErrorsUntilMs = 0;
 
 function normalizeBridgePayload(payload) {
   if (typeof payload !== "string") {
@@ -122,6 +130,90 @@ function createArtworkElement(track) {
   return artworkFrameElement;
 }
 
+function findTrackById(trackId) {
+  return (
+    currentRenderedTracks.find((track) => track.id === trackId) ||
+    queuedTracks.find((track) => track.id === trackId) ||
+    playbackHistory.find((track) => track.id === trackId) ||
+    null
+  );
+}
+
+function hasNextTrackAvailable() {
+  if (queuedTracks.length > 0) {
+    return true;
+  }
+
+  const currentTrackIndex = currentRenderedTracks.findIndex((track) => track.id === currentTrackId);
+  return currentTrackIndex >= 0 && currentTrackIndex + 1 < currentRenderedTracks.length;
+}
+
+function hasPreviousTrackAvailable() {
+  return playbackHistory.length >= 2;
+}
+
+function syncTransportButtons() {
+  prevTrackButtonElement.disabled = !hasPreviousTrackAvailable();
+  nextTrackButtonElement.disabled = !hasNextTrackAvailable();
+}
+
+function renderQueue() {
+  queueCountElement.textContent = queuedTracks.length === 0 ? "Очередь пуста" : `${queuedTracks.length} в очереди`;
+  queueListElement.replaceChildren();
+
+  if (queuedTracks.length === 0) {
+    const emptyQueueElement = document.createElement("li");
+    emptyQueueElement.className = "queue-item queue-item-empty";
+    emptyQueueElement.textContent = "Следующим будет трек по текущему списку.";
+    queueListElement.append(emptyQueueElement);
+    syncTransportButtons();
+    return;
+  }
+
+  queuedTracks.forEach((track) => {
+    const queueItemElement = document.createElement("li");
+    queueItemElement.className = "queue-item";
+
+    const queueMetaElement = document.createElement("div");
+    queueMetaElement.className = "queue-item-meta";
+
+    const queueTitleElement = document.createElement("span");
+    queueTitleElement.className = "queue-item-title";
+    queueTitleElement.textContent = track.title;
+
+    const queueArtistElement = document.createElement("span");
+    queueArtistElement.className = "queue-item-artist";
+    queueArtistElement.textContent = track.artistName || "Неизвестный артист";
+
+    const removeButtonElement = document.createElement("button");
+    removeButtonElement.className = "queue-remove-button";
+    removeButtonElement.type = "button";
+    removeButtonElement.dataset.action = "remove-queued-track";
+    removeButtonElement.dataset.trackId = track.id;
+    removeButtonElement.textContent = "Убрать";
+
+    queueMetaElement.append(queueTitleElement, queueArtistElement);
+    queueItemElement.append(queueMetaElement, removeButtonElement);
+    queueListElement.append(queueItemElement);
+  });
+
+  syncTransportButtons();
+}
+
+function enqueueTrack(track) {
+  if (!track || !track.id) {
+    return;
+  }
+
+  const isAlreadyQueued = queuedTracks.some((queuedTrack) => queuedTrack.id === track.id);
+  if (isAlreadyQueued) {
+    return;
+  }
+
+  queuedTracks.push(track);
+  renderQueue();
+}
+
 function renderTracks(tracks, emptyMessage) {
   currentRenderedTracks = Array.isArray(tracks) ? tracks : [];
   tracksListElement.replaceChildren();
@@ -131,6 +223,7 @@ function renderTracks(tracks, emptyMessage) {
     emptyStateElement.className = "track-card track-card-empty";
     emptyStateElement.textContent = emptyMessage;
     tracksListElement.append(emptyStateElement);
+    syncTransportButtons();
     return;
   }
 
@@ -166,6 +259,13 @@ function renderTracks(tracks, emptyMessage) {
     const actionsElement = document.createElement("div");
     actionsElement.className = "track-actions";
 
+    const queueButtonElement = document.createElement("button");
+    queueButtonElement.className = "queue-button";
+    queueButtonElement.type = "button";
+    queueButtonElement.dataset.action = "queue-track";
+    queueButtonElement.dataset.trackId = track.id;
+    queueButtonElement.textContent = "В очередь";
+
     const playButtonElement = document.createElement("button");
     playButtonElement.className = "play-button";
     playButtonElement.type = "button";
@@ -175,12 +275,14 @@ function renderTracks(tracks, emptyMessage) {
     playButtonElement.textContent = "Играть";
 
     metaElement.append(badgeElement, idElement);
-    actionsElement.append(playButtonElement);
+    actionsElement.append(queueButtonElement, playButtonElement);
     contentElement.append(metaElement, titleElement, artistElement, actionsElement);
     articleElement.append(createArtworkElement(track), contentElement);
     trackElement.append(articleElement);
     tracksListElement.append(trackElement);
   });
+
+  syncTransportButtons();
 }
 
 async function initializeBridgeStatus() {
@@ -212,35 +314,72 @@ function hasPlaybackEnded(previousState, nextState) {
   );
 }
 
-async function playTrackById(trackId, title) {
+function recordPlaybackHistory(trackId, trackTitle) {
+  if (!trackId) {
+    return;
+  }
+
+  const knownTrack = findTrackById(trackId) || { id: trackId, title: trackTitle, artistName: "" };
+  const lastTrack = playbackHistory.length > 0 ? playbackHistory[playbackHistory.length - 1] : null;
+  if (lastTrack?.id === knownTrack.id) {
+    return;
+  }
+
+  playbackHistory.push(knownTrack);
+  syncTransportButtons();
+}
+
+async function playTrackById(trackId, title, options = {}) {
+  const { recordHistory = true } = options;
+
   if (typeof window.playTrack !== "function") {
     setPlaybackStatus("Bridge недоступен", "Native playback API ещё не зарегистрирован.");
     return false;
   }
 
+  isStartingPlayback = true;
+  suppressPlaybackErrorsUntilMs = Date.now() + 2500;
   setPlaybackStatus("Подготовка...", `Запрашиваем native playback для: ${title}`);
 
   const response = normalizeBridgePayload(await window.playTrack({ trackId, title }));
   if (response?.ok === false) {
+    isStartingPlayback = false;
+    suppressPlaybackErrorsUntilMs = 0;
     throw new Error(response.message || "Не удалось запустить воспроизведение.");
   }
 
   currentTrackId = response.trackId || trackId;
   currentTrackTitle = response.trackTitle || title;
+
+  if (recordHistory) {
+    recordPlaybackHistory(currentTrackId, currentTrackTitle);
+  }
+
+  syncTransportButtons();
   return true;
 }
 
 async function playNextTrackIfAvailable() {
-  if (isAutoAdvancing || currentRenderedTracks.length === 0 || !currentTrackId) {
+  if (isAutoAdvancing) {
     return;
   }
 
-  const currentTrackIndex = currentRenderedTracks.findIndex((track) => track.id === currentTrackId);
-  if (currentTrackIndex < 0 || currentTrackIndex + 1 >= currentRenderedTracks.length) {
+  let nextTrack = null;
+  if (queuedTracks.length > 0) {
+    nextTrack = queuedTracks.shift();
+    renderQueue();
+  } else {
+    const currentTrackIndex = currentRenderedTracks.findIndex((track) => track.id === currentTrackId);
+    if (currentTrackIndex >= 0 && currentTrackIndex + 1 < currentRenderedTracks.length) {
+      nextTrack = currentRenderedTracks[currentTrackIndex + 1];
+    }
+  }
+
+  if (!nextTrack) {
+    syncTransportButtons();
     return;
   }
 
-  const nextTrack = currentRenderedTracks[currentTrackIndex + 1];
   isAutoAdvancing = true;
 
   try {
@@ -251,6 +390,7 @@ async function playNextTrackIfAvailable() {
     setPlaybackStatus("Ошибка playback", errorMessage);
   } finally {
     isAutoAdvancing = false;
+    syncTransportButtons();
   }
 }
 
@@ -280,6 +420,12 @@ async function refreshPlaybackState() {
     hasLoadedTrack = latestPlaybackState.state !== "idle";
     isPlaybackPaused = latestPlaybackState.state === "paused";
 
+    const isPlaybackActiveState = ["loading", "playing", "paused"].includes(latestPlaybackState.state);
+    if (isPlaybackActiveState && latestPlaybackState.trackId) {
+      isStartingPlayback = false;
+      suppressPlaybackErrorsUntilMs = 0;
+    }
+
     setPlaybackToggleState({
       disabled:
         latestPlaybackState.state === "idle" ||
@@ -290,6 +436,11 @@ async function refreshPlaybackState() {
     setPlaybackProgress(latestPlaybackState.positionMs, latestPlaybackState.durationMs);
 
     if (latestPlaybackState.state === "error") {
+      if (isStartingPlayback && Date.now() < suppressPlaybackErrorsUntilMs) {
+        return;
+      }
+
+      isStartingPlayback = false;
       setPlaybackStatus(
         mapPlaybackStateLabel(latestPlaybackState.state),
         response.errorMessage || "Неизвестная ошибка.",
@@ -309,6 +460,8 @@ async function refreshPlaybackState() {
     const errorMessage = error instanceof Error ? error.message : String(error);
     setPlaybackProgress(0, 0);
     setPlaybackStatus("Ошибка playback", errorMessage);
+  } finally {
+    syncTransportButtons();
   }
 }
 
@@ -327,8 +480,8 @@ async function loadFeaturedTracks() {
     }
 
     const tracks = Array.isArray(response.tracks) ? response.tracks : [];
-    searchSummaryElement.textContent = `${response.title || "Популярное сейчас"}: ${tracks.length} трек(ов).`;
-    renderTracks(tracks, "SoundCloud не вернул популярные треки для стартовой страницы.");
+    searchSummaryElement.textContent = `${response.title || "Популярное сейчас"}: ${tracks.length} совместимых трек(ов).`;
+    renderTracks(tracks, "SoundCloud не вернул совместимые треки для стартовой страницы.");
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     searchSummaryElement.textContent = `Ошибка загрузки стартовой витрины: ${errorMessage}`;
@@ -358,8 +511,8 @@ async function handleSearchSubmit(event) {
     }
 
     const tracks = Array.isArray(response.tracks) ? response.tracks : [];
-    searchSummaryElement.textContent = `Результаты по "${response.query}": ${tracks.length} трек(ов), limit=${response.limit}, offset=${response.offset}.`;
-    renderTracks(tracks, "По этому запросу SoundCloud не вернул доступные треки.");
+    searchSummaryElement.textContent = `Результаты по "${response.query}": ${tracks.length} совместимых трек(ов), limit=${response.limit}, offset=${response.offset}.`;
+    renderTracks(tracks, "По этому запросу SoundCloud не вернул совместимые треки.");
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     searchSummaryElement.textContent = `Ошибка запроса к bridge: ${errorMessage}`;
@@ -368,16 +521,24 @@ async function handleSearchSubmit(event) {
 }
 
 async function handleTrackListClick(event) {
-  const playButtonElement = event.target.closest("[data-action='play-track']");
-  if (!playButtonElement) {
+  const trackButtonElement = event.target.closest("[data-action]");
+  if (!trackButtonElement) {
     return;
   }
 
-  const trackId = playButtonElement.dataset.trackId || "";
-  const title = playButtonElement.dataset.title || "Без названия";
+  const trackId = trackButtonElement.dataset.trackId || "";
+  const track = findTrackById(trackId);
+  if (!track) {
+    return;
+  }
+
+  if (trackButtonElement.dataset.action === "queue-track") {
+    enqueueTrack(track);
+    return;
+  }
 
   try {
-    await playTrackById(trackId, title);
+    await playTrackById(track.id, track.title);
     await refreshPlaybackState();
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -387,6 +548,17 @@ async function handleTrackListClick(event) {
     setPlaybackProgress(0, 0);
     setPlaybackStatus("Ошибка playback", errorMessage);
   }
+}
+
+async function handleQueueClick(event) {
+  const removeButtonElement = event.target.closest("[data-action='remove-queued-track']");
+  if (!removeButtonElement) {
+    return;
+  }
+
+  const trackId = removeButtonElement.dataset.trackId || "";
+  queuedTracks = queuedTracks.filter((track) => track.id !== trackId);
+  renderQueue();
 }
 
 async function handlePlaybackToggle() {
@@ -420,6 +592,32 @@ async function handlePlaybackToggle() {
     const errorMessage = error instanceof Error ? error.message : String(error);
     setPlaybackStatus("Ошибка playback", errorMessage);
   }
+}
+
+async function handlePrevTrack() {
+  if (playbackHistory.length < 2) {
+    return;
+  }
+
+  playbackHistory.pop();
+  const previousTrack =
+    playbackHistory.length > 0 ? playbackHistory[playbackHistory.length - 1] : null;
+  if (!previousTrack) {
+    syncTransportButtons();
+    return;
+  }
+
+  try {
+    await playTrackById(previousTrack.id, previousTrack.title, { recordHistory: false });
+    await refreshPlaybackState();
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    setPlaybackStatus("Ошибка playback", errorMessage);
+  }
+}
+
+async function handleNextTrack() {
+  await playNextTrackIfAvailable();
 }
 
 async function handleProgressSeek(event) {
@@ -463,6 +661,7 @@ function startPlaybackPolling() {
 async function initializePage() {
   setPlaybackToggleState({ disabled: true, paused: false });
   setPlaybackProgress(0, 0);
+  renderQueue();
 
   const bridgeAvailable = await initializeBridgeStatus();
   if (!bridgeAvailable) {
@@ -475,8 +674,21 @@ async function initializePage() {
 }
 
 searchFormElement.addEventListener("submit", handleSearchSubmit);
-tracksListElement.addEventListener("click", handleTrackListClick);
-playbackToggleButtonElement.addEventListener("click", handlePlaybackToggle);
+tracksListElement.addEventListener("click", (event) => {
+  void handleTrackListClick(event);
+});
+queueListElement.addEventListener("click", (event) => {
+  void handleQueueClick(event);
+});
+prevTrackButtonElement.addEventListener("click", () => {
+  void handlePrevTrack();
+});
+playbackToggleButtonElement.addEventListener("click", () => {
+  void handlePlaybackToggle();
+});
+nextTrackButtonElement.addEventListener("click", () => {
+  void handleNextTrack();
+});
 playbackProgressTrackElement.addEventListener("click", (event) => {
   void handleProgressSeek(event);
 });
