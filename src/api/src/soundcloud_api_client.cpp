@@ -7,30 +7,11 @@
 namespace soundcloud::api {
 namespace {
 
-int score_transcoding(const track_transcoding_reference& transcoding) {
-    // Текущий backend построен на MFPlay.
-    // Для него прямой MP3-поток надёжнее HLS-плейлистов, поэтому
-    // сначала пробуем progressive audio/mpeg, а уже потом HLS-варианты.
-    if (transcoding.protocol == "progressive" && transcoding.mime_type == "audio/mpeg") {
-        return 0;
-    }
-
-    if (transcoding.protocol == "hls" && transcoding.mime_type == "audio/mpeg") {
-        return 1;
-    }
-
-    if (transcoding.protocol == "hls" &&
-        transcoding.mime_type == "audio/mpegurl" &&
-        !transcoding.is_legacy_transcoding) {
-        return 2;
-    }
-
-    if (transcoding.protocol == "hls" &&
-        transcoding.mime_type.find("audio/ogg") != std::string::npos) {
-        return 3;
-    }
-
-    return 4;
+bool is_supported_by_media_foundation_backend(const track_transcoding_reference& transcoding) {
+    // Текущий backend построен на MFPlay и стабильно воспроизводит только
+    // прямой progressive MP3. HLS-плейлисты для части треков приводят к
+    // HRESULT 0xc00d36c4, поэтому отбрасываем их заранее.
+    return transcoding.protocol == "progressive" && transcoding.mime_type == "audio/mpeg";
 }
 
 }  // namespace
@@ -50,16 +31,24 @@ std::vector<core::domain::track> soundcloud_api_client::get_featured_tracks(cons
 
 std::string soundcloud_api_client::resolve_stream_url(const std::string& track_id) const {
     track_playback_reference playback_reference = require_track_playback_reference(track_id);
+    std::vector<track_transcoding_reference> supported_transcodings;
+    supported_transcodings.reserve(playback_reference.transcodings.size());
 
-    std::ranges::sort(
-        playback_reference.transcodings,
-        [](const track_transcoding_reference& left, const track_transcoding_reference& right) {
-            return score_transcoding(left) < score_transcoding(right);
-        });
+    for (const track_transcoding_reference& transcoding : playback_reference.transcodings) {
+        if (is_supported_by_media_foundation_backend(transcoding)) {
+            supported_transcodings.push_back(transcoding);
+        }
+    }
+
+    if (supported_transcodings.empty()) {
+        throw std::runtime_error(
+            "Для этого трека SoundCloud не отдал совместимый MP3-поток. "
+            "Текущий backend пока не умеет воспроизводить его HLS-варианты.");
+    }
 
     std::string first_error_message;
 
-    for (const track_transcoding_reference& transcoding : playback_reference.transcodings) {
+    for (const track_transcoding_reference& transcoding : supported_transcodings) {
         try {
             const std::string payload = http_client_.fetch_transcoding_payload(
                 transcoding.url,

@@ -124,6 +124,8 @@ std::string app_bridge::build_get_playback_state_response() const {
                  << bridge_json_codec::escape_string(playback_state.stream_url)
                  << R"(,"errorMessage":)"
                  << bridge_json_codec::escape_string(playback_state.error_message)
+                 << R"(,"positionMs":)" << playback_state.position_ms
+                 << R"(,"durationMs":)" << playback_state.duration_ms
                  << R"(,"trackTitle":)"
                  << bridge_json_codec::escape_string(current_track_title_)
                  << '}';

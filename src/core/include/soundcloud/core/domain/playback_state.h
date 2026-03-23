@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 namespace soundcloud::core::domain {
@@ -23,6 +24,8 @@ struct playback_state {
     playback_status status = playback_status::idle;
     std::string stream_url;
     std::string error_message;
+    std::int64_t position_ms = 0;
+    std::int64_t duration_ms = 0;
 };
 
 }  // namespace soundcloud::core::domain

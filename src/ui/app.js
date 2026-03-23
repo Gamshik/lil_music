@@ -9,6 +9,9 @@ const tracksListElement = document.getElementById("tracks-list");
 const playbackBackendElement = document.getElementById("playback-backend");
 const playbackStatusElement = document.getElementById("playback-status");
 const currentTrackElement = document.getElementById("current-track");
+const playbackProgressFillElement = document.getElementById("playback-progress-fill");
+const playbackPositionElement = document.getElementById("playback-position");
+const playbackDurationElement = document.getElementById("playback-duration");
 const playbackToggleButtonElement = document.getElementById("playback-toggle-button");
 const loadFeaturedButtonElement = document.getElementById("load-featured-button");
 
@@ -37,6 +40,23 @@ function setBridgeStatus(title, details) {
 function setPlaybackStatus(state, details) {
   playbackStatusElement.textContent = state;
   currentTrackElement.textContent = details;
+}
+
+function formatMilliseconds(milliseconds) {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function setPlaybackProgress(positionMs, durationMs) {
+  const safePosition = Math.max(0, positionMs || 0);
+  const safeDuration = Math.max(0, durationMs || 0);
+  const progressPercent = safeDuration > 0 ? Math.min(100, (safePosition / safeDuration) * 100) : 0;
+
+  playbackProgressFillElement.style.width = `${progressPercent}%`;
+  playbackPositionElement.textContent = formatMilliseconds(safePosition);
+  playbackDurationElement.textContent = formatMilliseconds(safeDuration);
 }
 
 function setPlaybackToggleState({ disabled, paused }) {
@@ -183,9 +203,10 @@ async function refreshPlaybackState() {
     isPlaybackPaused = response.state === "paused";
 
     setPlaybackToggleState({
-      disabled: response.state === "idle" || response.state === "error",
+      disabled: response.state === "idle" || response.state === "error" || response.state === "loading",
       paused: isPlaybackPaused,
     });
+    setPlaybackProgress(response.positionMs || 0, response.durationMs || 0);
 
     if (response.state === "error") {
       setPlaybackStatus(mapPlaybackStateLabel(response.state), response.errorMessage || "Неизвестная ошибка.");
@@ -198,6 +219,7 @@ async function refreshPlaybackState() {
     );
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
+    setPlaybackProgress(0, 0);
     setPlaybackStatus("Ошибка playback", errorMessage);
   }
 }
@@ -285,6 +307,7 @@ async function handleTrackListClick(event) {
     hasLoadedTrack = false;
     isPlaybackPaused = false;
     setPlaybackToggleState({ disabled: true, paused: false });
+    setPlaybackProgress(0, 0);
     setPlaybackStatus("Ошибка playback", errorMessage);
   }
 }
@@ -334,6 +357,7 @@ function startPlaybackPolling() {
 
 async function initializePage() {
   setPlaybackToggleState({ disabled: true, paused: false });
+  setPlaybackProgress(0, 0);
 
   const bridgeAvailable = await initializeBridgeStatus();
   if (!bridgeAvailable) {

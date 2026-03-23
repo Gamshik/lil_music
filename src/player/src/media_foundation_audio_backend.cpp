@@ -1,6 +1,7 @@
 #include "media_foundation_audio_backend.h"
 
 #include <atomic>
+#include <cstdint>
 #include <exception>
 #include <memory>
 #include <mutex>
@@ -20,6 +21,7 @@
 #include <mferror.h>
 #include <mfidl.h>
 #include <mfplay.h>
+#include <propidl.h>
 
 namespace soundcloud::player {
 namespace {
@@ -118,6 +120,25 @@ std::wstring utf8_to_utf16(const std::string& value) {
     }
 
     return wide_value;
+}
+
+std::int64_t read_propvariant_as_int64(const PROPVARIANT& value) {
+    switch (value.vt) {
+        case VT_I8:
+            return value.hVal.QuadPart;
+        case VT_UI8:
+            return static_cast<std::int64_t>(value.uhVal.QuadPart);
+        case VT_I4:
+            return value.lVal;
+        case VT_UI4:
+            return static_cast<std::int64_t>(value.ulVal);
+        default:
+            return 0;
+    }
+}
+
+std::int64_t convert_100ns_to_milliseconds(const std::int64_t value_100ns) {
+    return value_100ns > 0 ? value_100ns / 10000 : 0;
 }
 
 class media_player_callback final : public IMFPMediaPlayerCallback {
@@ -224,6 +245,18 @@ public:
             FALSE,
             0,
             nullptr);
+        if (FAILED(create_item_result)) {
+            playback_state_.status = core::domain::playback_status::error;
+
+            if (create_item_result == MF_E_UNSUPPORTED_BYTESTREAM_TYPE) {
+                playback_state_.error_message =
+                    "Текущий playback backend не поддерживает формат аудиопотока этого трека.";
+                throw std::runtime_error(playback_state_.error_message);
+            }
+
+            playback_state_.error_message =
+                make_hresult_error("Подготовка media item из stream URL", create_item_result).what();
+        }
         throw_if_failed(create_item_result, "Подготовка media item из stream URL");
     }
 
@@ -264,7 +297,11 @@ public:
 
     [[nodiscard]] core::domain::playback_state get_playback_state() const {
         std::scoped_lock lock(state_mutex_);
-        return playback_state_;
+        core::domain::playback_state playback_state = playback_state_;
+        playback_state.status = read_native_playback_status(playback_state.status);
+        playback_state.position_ms = query_position_milliseconds();
+        playback_state.duration_ms = query_duration_milliseconds();
+        return playback_state;
     }
 
     void on_media_player_event(MFP_EVENT_HEADER* event_header) {
@@ -281,6 +318,21 @@ public:
                 case MFP_EVENT_TYPE_MEDIAITEM_SET:
                     handle_media_item_set(
                         reinterpret_cast<MFP_MEDIAITEM_SET_EVENT*>(event_header));
+                    break;
+                case MFP_EVENT_TYPE_PLAY:
+                    update_status(core::domain::playback_status::playing);
+                    break;
+                case MFP_EVENT_TYPE_PAUSE:
+                    update_status(core::domain::playback_status::paused);
+                    break;
+                case MFP_EVENT_TYPE_STOP:
+                    update_status(core::domain::playback_status::idle);
+                    break;
+                case MFP_EVENT_TYPE_PLAYBACK_ENDED:
+                    handle_playback_ended();
+                    break;
+                case MFP_EVENT_TYPE_ERROR:
+                    throw_if_failed(event_header->hrEvent, "Playback event");
                     break;
                 default:
                     break;
@@ -332,6 +384,79 @@ private:
             playback_state_.status = core::domain::playback_status::paused;
             playback_state_.error_message.clear();
         }
+    }
+
+    void handle_playback_ended() {
+        std::scoped_lock lock(state_mutex_);
+        playback_state_.status = core::domain::playback_status::idle;
+        playback_state_.position_ms = playback_state_.duration_ms;
+    }
+
+    void update_status(const core::domain::playback_status status) {
+        std::scoped_lock lock(state_mutex_);
+        playback_state_.status = status;
+    }
+
+    core::domain::playback_status read_native_playback_status(
+        const core::domain::playback_status fallback_status) const {
+        MFP_MEDIAPLAYER_STATE native_state = MFP_MEDIAPLAYER_STATE_EMPTY;
+        const HRESULT get_state_result = media_player_.get()->GetState(&native_state);
+        if (FAILED(get_state_result)) {
+            return fallback_status;
+        }
+
+        switch (native_state) {
+            case MFP_MEDIAPLAYER_STATE_PLAYING:
+                return core::domain::playback_status::playing;
+            case MFP_MEDIAPLAYER_STATE_PAUSED:
+                return core::domain::playback_status::paused;
+            case MFP_MEDIAPLAYER_STATE_EMPTY:
+                return core::domain::playback_status::idle;
+            case MFP_MEDIAPLAYER_STATE_STOPPED:
+                return fallback_status == core::domain::playback_status::error
+                           ? core::domain::playback_status::error
+                           : core::domain::playback_status::idle;
+            case MFP_MEDIAPLAYER_STATE_SHUTDOWN:
+                return core::domain::playback_status::idle;
+        }
+
+        return fallback_status;
+    }
+
+    [[nodiscard]] std::int64_t query_position_milliseconds() const {
+        PROPVARIANT position_value;
+        PropVariantInit(&position_value);
+
+        const HRESULT get_position_result = media_player_.get()->GetPosition(
+            MFP_POSITIONTYPE_100NS,
+            &position_value);
+        if (FAILED(get_position_result)) {
+            PropVariantClear(&position_value);
+            return 0;
+        }
+
+        const std::int64_t position_ms =
+            convert_100ns_to_milliseconds(read_propvariant_as_int64(position_value));
+        PropVariantClear(&position_value);
+        return position_ms;
+    }
+
+    [[nodiscard]] std::int64_t query_duration_milliseconds() const {
+        PROPVARIANT duration_value;
+        PropVariantInit(&duration_value);
+
+        const HRESULT get_duration_result = media_player_.get()->GetDuration(
+            MFP_POSITIONTYPE_100NS,
+            &duration_value);
+        if (FAILED(get_duration_result)) {
+            PropVariantClear(&duration_value);
+            return 0;
+        }
+
+        const std::int64_t duration_ms =
+            convert_100ns_to_milliseconds(read_propvariant_as_int64(duration_value));
+        PropVariantClear(&duration_value);
+        return duration_ms;
     }
 
     mutable std::mutex state_mutex_;
