@@ -21,6 +21,11 @@ public:
     std::string fetch_search_tracks_payload(const core::domain::track_search_request& request) const;
 
     /**
+     * Загружает стартовую подборку популярных треков.
+     */
+    std::string fetch_featured_tracks_payload(int limit) const;
+
+    /**
      * Выполняет запрос к transcoding endpoint и получает финальный playback payload.
      */
     std::string fetch_transcoding_payload(

@@ -33,11 +33,17 @@ public:
         const core::domain::track_search_request& request) const override;
 
     /**
+     * Возвращает подборку популярных треков для стартового экрана.
+     */
+    std::vector<core::domain::track> get_featured_tracks(int limit) const override;
+
+    /**
      * Разрешает актуальный playback URL для выбранного трека.
      */
     std::string resolve_stream_url(const std::string& track_id) const override;
 
 private:
+    std::vector<core::domain::track> parse_and_cache_tracks(const std::string& payload) const;
     track_playback_reference require_track_playback_reference(const std::string& track_id) const;
 
     soundcloud_http_client http_client_;

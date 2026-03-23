@@ -4,6 +4,8 @@
 #include <iostream>
 
 #include "soundcloud/api/soundcloud_api_configuration.h"
+#include "soundcloud/core/use_cases/get_playback_state_use_case.h"
+#include "soundcloud/core/use_cases/list_featured_tracks_use_case.h"
 #include "soundcloud/core/use_cases/pause_playback_use_case.h"
 #include "soundcloud/core/use_cases/play_track_use_case.h"
 #include "soundcloud/core/use_cases/resume_playback_use_case.h"
@@ -27,6 +29,8 @@ api::soundcloud_api_configuration build_soundcloud_api_configuration() {
 desktop_application::desktop_application()
     : api_client_(build_soundcloud_api_configuration()),
       bridge_(
+          core::use_cases::get_playback_state_use_case(audio_player_),
+          core::use_cases::list_featured_tracks_use_case(api_client_),
           core::use_cases::play_track_use_case(api_client_, audio_player_),
           core::use_cases::pause_playback_use_case(audio_player_),
           core::use_cases::resume_playback_use_case(audio_player_),

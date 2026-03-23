@@ -215,6 +215,9 @@ public:
         current_stream_url_.clear();
         media_item_ready_ = false;
         should_start_playback_when_ready_ = false;
+        playback_state_.status = core::domain::playback_status::loading;
+        playback_state_.stream_url = stream_url;
+        playback_state_.error_message.clear();
 
         const HRESULT create_item_result = media_player_.get()->CreateMediaItemFromURL(
             wide_stream_url.c_str(),
@@ -229,14 +232,20 @@ public:
 
         if (!pending_stream_url_.empty() && !media_item_ready_) {
             should_start_playback_when_ready_ = true;
+            playback_state_.status = core::domain::playback_status::loading;
             return;
         }
 
         if (current_stream_url_.empty()) {
+            playback_state_.status = core::domain::playback_status::error;
+            playback_state_.error_message = "Плеер ещё не загрузил аудиопоток.";
             throw std::runtime_error("Плеер ещё не загрузил аудиопоток.");
         }
 
         throw_if_failed(media_player_.get()->Play(), "Запуск воспроизведения");
+        playback_state_.status = core::domain::playback_status::playing;
+        playback_state_.stream_url = current_stream_url_;
+        playback_state_.error_message.clear();
     }
 
     void pause() {
@@ -248,6 +257,14 @@ public:
         }
 
         throw_if_failed(media_player_.get()->Pause(), "Пауза воспроизведения");
+        playback_state_.status = core::domain::playback_status::paused;
+        playback_state_.stream_url = current_stream_url_;
+        playback_state_.error_message.clear();
+    }
+
+    [[nodiscard]] core::domain::playback_state get_playback_state() const {
+        std::scoped_lock lock(state_mutex_);
+        return playback_state_;
     }
 
     void on_media_player_event(MFP_EVENT_HEADER* event_header) {
@@ -270,7 +287,9 @@ public:
             }
         } catch (const std::exception& exception) {
             std::scoped_lock lock(state_mutex_);
+            playback_state_.status = core::domain::playback_status::error;
             last_error_message_ = exception.what();
+            playback_state_.error_message = last_error_message_;
         }
     }
 
@@ -299,20 +318,29 @@ private:
             current_stream_url_ = pending_stream_url_;
             pending_stream_url_.clear();
             media_item_ready_ = true;
+            playback_state_.stream_url = current_stream_url_;
             should_play = should_start_playback_when_ready_;
         }
 
         if (should_play) {
             throw_if_failed(media_player_.get()->Play(), "Автоматический старт воспроизведения");
+            std::scoped_lock lock(state_mutex_);
+            playback_state_.status = core::domain::playback_status::playing;
+            playback_state_.error_message.clear();
+        } else {
+            std::scoped_lock lock(state_mutex_);
+            playback_state_.status = core::domain::playback_status::paused;
+            playback_state_.error_message.clear();
         }
     }
 
-    std::mutex state_mutex_;
+    mutable std::mutex state_mutex_;
     com_ptr<IMFPMediaPlayer> media_player_;
     media_player_callback* callback_ = nullptr;
     std::string pending_stream_url_;
     std::string current_stream_url_;
     std::string last_error_message_;
+    core::domain::playback_state playback_state_{};
     bool should_start_playback_when_ready_ = false;
     bool media_item_ready_ = false;
     bool should_uninitialize_com_ = false;
@@ -338,6 +366,10 @@ void media_foundation_audio_backend::play() {
 
 void media_foundation_audio_backend::pause() {
     implementation_->pause();
+}
+
+core::domain::playback_state media_foundation_audio_backend::get_playback_state() const {
+    return implementation_->get_playback_state();
 }
 
 }  // namespace soundcloud::player

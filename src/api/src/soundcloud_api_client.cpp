@@ -41,20 +41,11 @@ soundcloud_api_client::soundcloud_api_client(soundcloud_api_configuration config
 
 std::vector<core::domain::track> soundcloud_api_client::search_tracks(
     const core::domain::track_search_request& request) const {
-    const std::string payload = http_client_.fetch_search_tracks_payload(request);
-    parsed_track_search_payload parsed_payload = track_search_response_parser_.parse(payload);
+    return parse_and_cache_tracks(http_client_.fetch_search_tracks_payload(request));
+}
 
-    {
-        std::scoped_lock lock(playback_reference_mutex_);
-        playback_reference_by_track_id_.clear();
-        for (track_playback_reference& playback_reference : parsed_payload.playback_references) {
-            playback_reference_by_track_id_.insert_or_assign(
-                playback_reference.track_id,
-                std::move(playback_reference));
-        }
-    }
-
-    return parsed_payload.tracks;
+std::vector<core::domain::track> soundcloud_api_client::get_featured_tracks(const int limit) const {
+    return parse_and_cache_tracks(http_client_.fetch_featured_tracks_payload(limit));
 }
 
 std::string soundcloud_api_client::resolve_stream_url(const std::string& track_id) const {
@@ -100,6 +91,23 @@ track_playback_reference soundcloud_api_client::require_track_playback_reference
     }
 
     return playback_reference_iterator->second;
+}
+
+std::vector<core::domain::track> soundcloud_api_client::parse_and_cache_tracks(
+    const std::string& payload) const {
+    parsed_track_search_payload parsed_payload = track_search_response_parser_.parse(payload);
+
+    {
+        std::scoped_lock lock(playback_reference_mutex_);
+        playback_reference_by_track_id_.clear();
+        for (track_playback_reference& playback_reference : parsed_payload.playback_references) {
+            playback_reference_by_track_id_.insert_or_assign(
+                playback_reference.track_id,
+                std::move(playback_reference));
+        }
+    }
+
+    return parsed_payload.tracks;
 }
 
 }  // namespace soundcloud::api

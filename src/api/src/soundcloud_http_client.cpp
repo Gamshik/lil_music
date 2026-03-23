@@ -221,6 +221,26 @@ std::string soundcloud_http_client::fetch_search_tracks_payload(
     return perform_get_request(path.str());
 }
 
+std::string soundcloud_http_client::fetch_featured_tracks_payload(const int limit) const {
+    if (configuration_.api_host.empty()) {
+        throw std::runtime_error("Не задан host публичного SoundCloud API.");
+    }
+
+    if (configuration_.client_id.empty()) {
+        throw std::runtime_error("Не задан client_id публичного SoundCloud API.");
+    }
+
+    const int normalized_limit =
+        limit > 0 ? limit : (configuration_.default_search_limit > 0 ? configuration_.default_search_limit : 12);
+
+    std::ostringstream path;
+    path << "/featured_tracks/top/all-music?client_id="
+         << url_encode_component(configuration_.client_id)
+         << "&limit=" << normalized_limit;
+
+    return perform_get_request(path.str());
+}
+
 std::string soundcloud_http_client::fetch_transcoding_payload(
     const std::string& transcoding_url,
     const std::string& track_authorization) const {

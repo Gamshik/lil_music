@@ -2,6 +2,8 @@
 
 #include <string>
 
+#include "soundcloud/core/domain/playback_state.h"
+
 namespace soundcloud::core::ports {
 
 /**
@@ -26,6 +28,11 @@ public:
      * Ставит воспроизведение на паузу.
      */
     virtual void pause() = 0;
+
+    /**
+     * Возвращает текущее нормализованное состояние плеера.
+     */
+    [[nodiscard]] virtual domain::playback_state get_playback_state() const = 0;
 };
 
 }  // namespace soundcloud::core::ports

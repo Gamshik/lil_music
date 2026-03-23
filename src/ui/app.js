@@ -10,10 +10,12 @@ const playbackBackendElement = document.getElementById("playback-backend");
 const playbackStatusElement = document.getElementById("playback-status");
 const currentTrackElement = document.getElementById("current-track");
 const playbackToggleButtonElement = document.getElementById("playback-toggle-button");
+const loadFeaturedButtonElement = document.getElementById("load-featured-button");
 
 let currentTrackTitle = "";
 let hasLoadedTrack = false;
 let isPlaybackPaused = false;
+let playbackPollingTimer = null;
 
 function normalizeBridgePayload(payload) {
   if (typeof payload !== "string") {
@@ -40,6 +42,21 @@ function setPlaybackStatus(state, details) {
 function setPlaybackToggleState({ disabled, paused }) {
   playbackToggleButtonElement.disabled = disabled;
   playbackToggleButtonElement.textContent = paused ? "Продолжить" : "Пауза";
+}
+
+function mapPlaybackStateLabel(state) {
+  switch (state) {
+    case "loading":
+      return "Загрузка";
+    case "playing":
+      return "Воспроизведение";
+    case "paused":
+      return "Пауза";
+    case "error":
+      return "Ошибка playback";
+    default:
+      return "Остановлено";
+  }
 }
 
 function createArtworkFallbackElement(title) {
@@ -72,13 +89,13 @@ function createArtworkElement(track) {
   return artworkFrameElement;
 }
 
-function renderTracks(tracks) {
+function renderTracks(tracks, emptyMessage) {
   tracksListElement.replaceChildren();
 
   if (tracks.length === 0) {
     const emptyStateElement = document.createElement("li");
     emptyStateElement.className = "track-card track-card-empty";
-    emptyStateElement.textContent = "По этому запросу SoundCloud не вернул доступные треки.";
+    emptyStateElement.textContent = emptyMessage;
     tracksListElement.append(emptyStateElement);
     return;
   }
@@ -135,16 +152,77 @@ function renderTracks(tracks) {
 async function initializeBridgeStatus() {
   if (typeof window.getAppInfo !== "function") {
     setBridgeStatus("Bridge недоступен", "Web UI открыт вне desktop shell.");
-    return;
+    return false;
   }
 
   try {
     const appInfo = normalizeBridgePayload(await window.getAppInfo());
     setBridgeStatus(appInfo.bridgeStatus, appInfo.applicationName);
     playbackBackendElement.textContent = `Playback backend: ${appInfo.playbackBackend || "неизвестен"}`;
+    return true;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     setBridgeStatus("Ошибка bridge", errorMessage);
+    return false;
+  }
+}
+
+async function refreshPlaybackState() {
+  if (typeof window.getPlaybackState !== "function") {
+    return;
+  }
+
+  try {
+    const response = normalizeBridgePayload(await window.getPlaybackState());
+    if (response?.ok === false) {
+      throw new Error(response.message || "Не удалось получить playback state.");
+    }
+
+    currentTrackTitle = response.trackTitle || currentTrackTitle;
+    hasLoadedTrack = response.state !== "idle";
+    isPlaybackPaused = response.state === "paused";
+
+    setPlaybackToggleState({
+      disabled: response.state === "idle" || response.state === "error",
+      paused: isPlaybackPaused,
+    });
+
+    if (response.state === "error") {
+      setPlaybackStatus(mapPlaybackStateLabel(response.state), response.errorMessage || "Неизвестная ошибка.");
+      return;
+    }
+
+    setPlaybackStatus(
+      mapPlaybackStateLabel(response.state),
+      response.trackTitle || currentTrackTitle || "Трек ещё не выбран",
+    );
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    setPlaybackStatus("Ошибка playback", errorMessage);
+  }
+}
+
+async function loadFeaturedTracks() {
+  if (typeof window.getFeaturedTracks !== "function") {
+    searchSummaryElement.textContent = "Bridge API популярных треков ещё не зарегистрирован.";
+    return;
+  }
+
+  searchSummaryElement.textContent = "Загружаем популярные треки...";
+
+  try {
+    const response = normalizeBridgePayload(await window.getFeaturedTracks({ limit: 12 }));
+    if (response?.ok === false) {
+      throw new Error(response.message || "Не удалось загрузить популярные треки.");
+    }
+
+    const tracks = Array.isArray(response.tracks) ? response.tracks : [];
+    searchSummaryElement.textContent = `${response.title || "Популярное сейчас"}: ${tracks.length} трек(ов).`;
+    renderTracks(tracks, "SoundCloud не вернул популярные треки для стартовой страницы.");
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    searchSummaryElement.textContent = `Ошибка загрузки стартовой витрины: ${errorMessage}`;
+    renderTracks([], "Не удалось загрузить популярные треки.");
   }
 }
 
@@ -170,12 +248,12 @@ async function handleSearchSubmit(event) {
     }
 
     const tracks = Array.isArray(response.tracks) ? response.tracks : [];
-    searchSummaryElement.textContent = `Native bridge обработал запрос "${response.query}" и вернул ${tracks.length} трек(ов) при limit=${response.limit} и offset=${response.offset}.`;
-    renderTracks(tracks);
+    searchSummaryElement.textContent = `Результаты по "${response.query}": ${tracks.length} трек(ов), limit=${response.limit}, offset=${response.offset}.`;
+    renderTracks(tracks, "По этому запросу SoundCloud не вернул доступные треки.");
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     searchSummaryElement.textContent = `Ошибка запроса к bridge: ${errorMessage}`;
-    renderTracks([]);
+    renderTracks([], "Не удалось выполнить поиск.");
   }
 }
 
@@ -201,10 +279,7 @@ async function handleTrackListClick(event) {
     }
 
     currentTrackTitle = response.trackTitle || title;
-    hasLoadedTrack = true;
-    isPlaybackPaused = false;
-    setPlaybackToggleState({ disabled: false, paused: false });
-    setPlaybackStatus("Запуск...", currentTrackTitle);
+    await refreshPlaybackState();
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     hasLoadedTrack = false;
@@ -236,20 +311,45 @@ async function handlePlaybackToggle() {
       );
     }
 
-    isPlaybackPaused = !isPlaybackPaused;
-    setPlaybackToggleState({ disabled: false, paused: isPlaybackPaused });
-    setPlaybackStatus(
-      isPlaybackPaused ? "Пауза" : "Воспроизведение",
-      currentTrackTitle || "Текущий трек недоступен",
-    );
+    if (response.trackTitle) {
+      currentTrackTitle = response.trackTitle;
+    }
+
+    await refreshPlaybackState();
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     setPlaybackStatus("Ошибка playback", errorMessage);
   }
 }
 
+function startPlaybackPolling() {
+  if (playbackPollingTimer !== null) {
+    clearInterval(playbackPollingTimer);
+  }
+
+  playbackPollingTimer = window.setInterval(() => {
+    void refreshPlaybackState();
+  }, 1500);
+}
+
+async function initializePage() {
+  setPlaybackToggleState({ disabled: true, paused: false });
+
+  const bridgeAvailable = await initializeBridgeStatus();
+  if (!bridgeAvailable) {
+    return;
+  }
+
+  await refreshPlaybackState();
+  await loadFeaturedTracks();
+  startPlaybackPolling();
+}
+
 searchFormElement.addEventListener("submit", handleSearchSubmit);
 tracksListElement.addEventListener("click", handleTrackListClick);
 playbackToggleButtonElement.addEventListener("click", handlePlaybackToggle);
-setPlaybackToggleState({ disabled: true, paused: false });
-initializeBridgeStatus();
+loadFeaturedButtonElement.addEventListener("click", () => {
+  void loadFeaturedTracks();
+});
+
+void initializePage();

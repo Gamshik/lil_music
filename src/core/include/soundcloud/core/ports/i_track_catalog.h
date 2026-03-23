@@ -21,6 +21,11 @@ public:
      */
     virtual std::vector<domain::track> search_tracks(
         const domain::track_search_request& request) const = 0;
+
+    /**
+     * Возвращает стартовую подборку популярных треков.
+     */
+    virtual std::vector<domain::track> get_featured_tracks(int limit) const = 0;
 };
 
 }  // namespace soundcloud::core::ports

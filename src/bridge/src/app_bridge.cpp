@@ -9,6 +9,23 @@
 namespace soundcloud::bridge {
 namespace {
 
+std::string to_string(const core::domain::playback_status status) {
+    switch (status) {
+        case core::domain::playback_status::idle:
+            return "idle";
+        case core::domain::playback_status::loading:
+            return "loading";
+        case core::domain::playback_status::playing:
+            return "playing";
+        case core::domain::playback_status::paused:
+            return "paused";
+        case core::domain::playback_status::error:
+            return "error";
+    }
+
+    return "idle";
+}
+
 std::string build_error_response(const std::string& message) {
     std::ostringstream response;
     response << R"({"ok":false,"message":)" << bridge_json_codec::escape_string(message) << '}';
@@ -32,12 +49,16 @@ std::string serialize_track(const core::domain::track& track) {
 }  // namespace
 
 app_bridge::app_bridge(
+    core::use_cases::get_playback_state_use_case get_playback_state_use_case,
+    core::use_cases::list_featured_tracks_use_case list_featured_tracks_use_case,
     core::use_cases::play_track_use_case play_track_use_case,
     core::use_cases::pause_playback_use_case pause_playback_use_case,
     core::use_cases::resume_playback_use_case resume_playback_use_case,
     core::use_cases::search_tracks_use_case search_tracks_use_case,
     core::use_cases::toggle_favorite_use_case toggle_favorite_use_case)
-    : play_track_use_case_(std::move(play_track_use_case)),
+    : get_playback_state_use_case_(std::move(get_playback_state_use_case)),
+      list_featured_tracks_use_case_(std::move(list_featured_tracks_use_case)),
+      play_track_use_case_(std::move(play_track_use_case)),
       pause_playback_use_case_(std::move(pause_playback_use_case)),
       resume_playback_use_case_(std::move(resume_playback_use_case)),
       search_tracks_use_case_(std::move(search_tracks_use_case)),
@@ -48,6 +69,16 @@ std::vector<ui_binding> app_bridge::get_bindings() const {
         ui_binding{
             .name = "getAppInfo",
             .handler = [this](const std::string&) { return build_app_info_response(); },
+        },
+        ui_binding{
+            .name = "getPlaybackState",
+            .handler = [this](const std::string&) { return build_get_playback_state_response(); },
+        },
+        ui_binding{
+            .name = "getFeaturedTracks",
+            .handler = [this](const std::string& request_json) {
+                return build_get_featured_tracks_response(request_json);
+            },
         },
         ui_binding{
             .name = "playTrack",
@@ -82,6 +113,52 @@ std::string app_bridge::build_app_info_response() const {
     return R"({"ok":true,"applicationName":"Lil Music","bridgeStatus":"connected","playbackBackend":"Media Foundation"})";
 }
 
+std::string app_bridge::build_get_playback_state_response() const {
+    try {
+        const core::domain::playback_state playback_state = get_playback_state_use_case_.execute();
+
+        std::ostringstream response;
+        response << R"({"ok":true,"state":)"
+                 << bridge_json_codec::escape_string(to_string(playback_state.status))
+                 << R"(,"streamUrl":)"
+                 << bridge_json_codec::escape_string(playback_state.stream_url)
+                 << R"(,"errorMessage":)"
+                 << bridge_json_codec::escape_string(playback_state.error_message)
+                 << R"(,"trackTitle":)"
+                 << bridge_json_codec::escape_string(current_track_title_)
+                 << '}';
+        return response.str();
+    } catch (const std::exception& exception) {
+        return build_error_response(exception.what());
+    }
+}
+
+std::string app_bridge::build_get_featured_tracks_response(const std::string& request_json) const {
+    try {
+        const int limit =
+            bridge_json_codec::read_integer_field_from_first_argument(request_json, "limit")
+                .value_or(12);
+        const std::vector<core::domain::track> tracks = list_featured_tracks_use_case_.execute(limit);
+
+        std::ostringstream response;
+        response << R"({"ok":true,"title":"Популярное сейчас","limit":)" << limit
+                 << R"(,"tracks":[)";
+
+        for (std::size_t index = 0; index < tracks.size(); ++index) {
+            if (index != 0) {
+                response << ',';
+            }
+
+            response << serialize_track(tracks[index]);
+        }
+
+        response << "]}";
+        return response.str();
+    } catch (const std::exception& exception) {
+        return build_error_response(exception.what());
+    }
+}
+
 std::string app_bridge::build_play_track_response(const std::string& request_json) const {
     try {
         const std::string track_id = bridge_json_codec::read_string_field_from_first_argument(
@@ -94,6 +171,7 @@ std::string app_bridge::build_play_track_response(const std::string& request_jso
                                             .value_or("Без названия");
 
         play_track_use_case_.execute(track_id);
+        current_track_title_ = track_title;
 
         std::ostringstream response;
         response << R"({"ok":true,"trackTitle":)" << bridge_json_codec::escape_string(track_title)
@@ -116,7 +194,11 @@ std::string app_bridge::build_pause_playback_response() const {
 std::string app_bridge::build_resume_playback_response() const {
     try {
         resume_playback_use_case_.execute();
-        return R"({"ok":true,"state":"playing"})";
+        std::ostringstream response;
+        response << R"({"ok":true,"state":"playing","trackTitle":)"
+                 << bridge_json_codec::escape_string(current_track_title_)
+                 << '}';
+        return response.str();
     } catch (const std::exception& exception) {
         return build_error_response(exception.what());
     }

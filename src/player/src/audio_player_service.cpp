@@ -27,4 +27,8 @@ void audio_player_service::pause() {
     backend_->pause();
 }
 
+core::domain::playback_state audio_player_service::get_playback_state() const {
+    return backend_->get_playback_state();
+}
+
 }  // namespace soundcloud::player

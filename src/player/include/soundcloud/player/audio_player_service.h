@@ -38,6 +38,11 @@ public:
      */
     void pause() override;
 
+    /**
+     * Возвращает текущее состояние Media Foundation backend в доменном формате.
+     */
+    [[nodiscard]] core::domain::playback_state get_playback_state() const override;
+
 private:
     std::unique_ptr<media_foundation_audio_backend> backend_;
 };

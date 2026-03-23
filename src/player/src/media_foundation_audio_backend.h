@@ -3,6 +3,8 @@
 #include <memory>
 #include <string>
 
+#include "soundcloud/core/domain/playback_state.h"
+
 namespace soundcloud::player {
 
 /**
@@ -22,6 +24,7 @@ public:
     void load(const std::string& stream_url);
     void play();
     void pause();
+    [[nodiscard]] core::domain::playback_state get_playback_state() const;
 
     std::unique_ptr<implementation> implementation_;
 };
