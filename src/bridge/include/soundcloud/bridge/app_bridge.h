@@ -3,6 +3,7 @@
 #include <string>
 
 #include "soundcloud/bridge/i_ui_bridge.h"
+#include "soundcloud/core/services/playback_session.h"
 #include "soundcloud/core/use_cases/get_playback_state_use_case.h"
 #include "soundcloud/core/use_cases/list_featured_tracks_use_case.h"
 #include "soundcloud/core/use_cases/pause_playback_use_case.h"
@@ -38,8 +39,13 @@ public:
 private:
     std::string build_app_info_response() const;
     std::string build_get_playback_state_response() const;
+    std::string build_get_queue_state_response() const;
     std::string build_get_featured_tracks_response(const std::string& request_json) const;
+    std::string build_enqueue_track_response(const std::string& request_json) const;
+    std::string build_remove_queued_track_response(const std::string& request_json) const;
     std::string build_play_track_response(const std::string& request_json) const;
+    std::string build_play_previous_track_response() const;
+    std::string build_play_next_track_response() const;
     std::string build_pause_playback_response() const;
     std::string build_resume_playback_response() const;
     std::string build_seek_playback_response(const std::string& request_json) const;
@@ -54,8 +60,7 @@ private:
     core::use_cases::seek_playback_use_case seek_playback_use_case_;
     core::use_cases::search_tracks_use_case search_tracks_use_case_;
     core::use_cases::toggle_favorite_use_case toggle_favorite_use_case_;
-    mutable std::string current_track_title_;
-    mutable std::string current_track_id_;
+    mutable core::services::playback_session playback_session_;
 };
 
 }  // namespace soundcloud::bridge

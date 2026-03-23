@@ -26,8 +26,6 @@ let hasLoadedTrack = false;
 let isPlaybackPaused = false;
 let playbackPollingTimer = null;
 let currentRenderedTracks = [];
-let queuedTracks = [];
-let playbackHistory = [];
 let latestPlaybackState = {
   state: "idle",
   positionMs: 0,
@@ -36,9 +34,17 @@ let latestPlaybackState = {
   trackId: "",
   trackTitle: "",
 };
+let latestQueueState = {
+  currentTrackId: "",
+  currentTrackTitle: "",
+  queuedTracks: [],
+  canPlayPrevious: false,
+  canPlayNext: false,
+};
 let previousPlaybackState = null;
 let isAutoAdvancing = false;
 let isStartingPlayback = false;
+let isTransportCommandInFlight = false;
 let suppressPlaybackErrorsUntilMs = 0;
 
 function normalizeBridgePayload(payload) {
@@ -133,32 +139,23 @@ function createArtworkElement(track) {
 function findTrackById(trackId) {
   return (
     currentRenderedTracks.find((track) => track.id === trackId) ||
-    queuedTracks.find((track) => track.id === trackId) ||
-    playbackHistory.find((track) => track.id === trackId) ||
+    latestQueueState.queuedTracks.find((track) => track.id === trackId) ||
     null
   );
 }
 
-function hasNextTrackAvailable() {
-  if (queuedTracks.length > 0) {
-    return true;
-  }
-
-  const currentTrackIndex = currentRenderedTracks.findIndex((track) => track.id === currentTrackId);
-  return currentTrackIndex >= 0 && currentTrackIndex + 1 < currentRenderedTracks.length;
-}
-
-function hasPreviousTrackAvailable() {
-  return playbackHistory.length >= 2;
-}
-
 function syncTransportButtons() {
-  prevTrackButtonElement.disabled = !hasPreviousTrackAvailable();
-  nextTrackButtonElement.disabled = !hasNextTrackAvailable();
+  const shouldDisableTransportButtons =
+    isTransportCommandInFlight || latestPlaybackState.state === "loading";
+  prevTrackButtonElement.disabled =
+    shouldDisableTransportButtons || !latestQueueState.canPlayPrevious;
+  nextTrackButtonElement.disabled = shouldDisableTransportButtons || !latestQueueState.canPlayNext;
 }
 
 function renderQueue() {
-  queueCountElement.textContent = queuedTracks.length === 0 ? "Очередь пуста" : `${queuedTracks.length} в очереди`;
+  const queuedTracks = latestQueueState.queuedTracks;
+  queueCountElement.textContent =
+    queuedTracks.length === 0 ? "Очередь пуста" : `${queuedTracks.length} в очереди`;
   queueListElement.replaceChildren();
 
   if (queuedTracks.length === 0) {
@@ -200,18 +197,37 @@ function renderQueue() {
   syncTransportButtons();
 }
 
-function enqueueTrack(track) {
-  if (!track || !track.id) {
+async function refreshQueueState() {
+  if (typeof window.getQueueState !== "function") {
     return;
   }
 
-  const isAlreadyQueued = queuedTracks.some((queuedTrack) => queuedTrack.id === track.id);
-  if (isAlreadyQueued) {
-    return;
+  const response = normalizeBridgePayload(await window.getQueueState());
+  if (response?.ok === false) {
+    throw new Error(response.message || "Не удалось получить состояние очереди.");
   }
 
-  queuedTracks.push(track);
+  latestQueueState = {
+    currentTrackId: response.currentTrackId || "",
+    currentTrackTitle: response.currentTrackTitle || "",
+    queuedTracks: Array.isArray(response.queuedTracks) ? response.queuedTracks : [],
+    canPlayPrevious: Boolean(response.canPlayPrevious),
+    canPlayNext: Boolean(response.canPlayNext),
+  };
   renderQueue();
+}
+
+async function enqueueTrack(track) {
+  if (!track || !track.id || typeof window.enqueueTrack !== "function") {
+    return;
+  }
+
+  const response = normalizeBridgePayload(await window.enqueueTrack({ trackId: track.id }));
+  if (response?.ok === false) {
+    throw new Error(response.message || "Не удалось добавить трек в очередь.");
+  }
+
+  await refreshQueueState();
 }
 
 function renderTracks(tracks, emptyMessage) {
@@ -314,49 +330,47 @@ function hasPlaybackEnded(previousState, nextState) {
   );
 }
 
-function recordPlaybackHistory(trackId, trackTitle) {
-  if (!trackId) {
-    return;
+async function runTransportCommand(command) {
+  if (isTransportCommandInFlight) {
+    return false;
   }
 
-  const knownTrack = findTrackById(trackId) || { id: trackId, title: trackTitle, artistName: "" };
-  const lastTrack = playbackHistory.length > 0 ? playbackHistory[playbackHistory.length - 1] : null;
-  if (lastTrack?.id === knownTrack.id) {
-    return;
-  }
-
-  playbackHistory.push(knownTrack);
+  isTransportCommandInFlight = true;
   syncTransportButtons();
+
+  try {
+    await command();
+    return true;
+  } finally {
+    isTransportCommandInFlight = false;
+    syncTransportButtons();
+  }
 }
 
-async function playTrackById(trackId, title, options = {}) {
-  const { recordHistory = true } = options;
-
+async function playTrackById(trackId, title) {
   if (typeof window.playTrack !== "function") {
     setPlaybackStatus("Bridge недоступен", "Native playback API ещё не зарегистрирован.");
     return false;
   }
 
-  isStartingPlayback = true;
-  suppressPlaybackErrorsUntilMs = Date.now() + 2500;
-  setPlaybackStatus("Подготовка...", `Запрашиваем native playback для: ${title}`);
+  return runTransportCommand(async () => {
+    isStartingPlayback = true;
+    suppressPlaybackErrorsUntilMs = Date.now() + 2500;
+    setPlaybackStatus("Подготовка...", `Запрашиваем native playback для: ${title}`);
 
-  const response = normalizeBridgePayload(await window.playTrack({ trackId, title }));
-  if (response?.ok === false) {
-    isStartingPlayback = false;
-    suppressPlaybackErrorsUntilMs = 0;
-    throw new Error(response.message || "Не удалось запустить воспроизведение.");
-  }
+    const response = normalizeBridgePayload(await window.playTrack({ trackId, title }));
+    if (response?.ok === false) {
+      isStartingPlayback = false;
+      suppressPlaybackErrorsUntilMs = 0;
+      throw new Error(response.message || "Не удалось запустить воспроизведение.");
+    }
 
-  currentTrackId = response.trackId || trackId;
-  currentTrackTitle = response.trackTitle || title;
+    currentTrackId = response.trackId || trackId;
+    currentTrackTitle = response.trackTitle || title;
 
-  if (recordHistory) {
-    recordPlaybackHistory(currentTrackId, currentTrackTitle);
-  }
-
-  syncTransportButtons();
-  return true;
+    await refreshQueueState();
+    syncTransportButtons();
+  });
 }
 
 async function playNextTrackIfAvailable() {
@@ -364,26 +378,29 @@ async function playNextTrackIfAvailable() {
     return;
   }
 
-  let nextTrack = null;
-  if (queuedTracks.length > 0) {
-    nextTrack = queuedTracks.shift();
-    renderQueue();
-  } else {
-    const currentTrackIndex = currentRenderedTracks.findIndex((track) => track.id === currentTrackId);
-    if (currentTrackIndex >= 0 && currentTrackIndex + 1 < currentRenderedTracks.length) {
-      nextTrack = currentRenderedTracks[currentTrackIndex + 1];
-    }
-  }
-
-  if (!nextTrack) {
-    syncTransportButtons();
-    return;
-  }
-
   isAutoAdvancing = true;
 
   try {
-    await playTrackById(nextTrack.id, nextTrack.title);
+    if (typeof window.playNextTrack !== "function") {
+      return;
+    }
+
+    const commandExecuted = await runTransportCommand(async () => {
+      const response = normalizeBridgePayload(await window.playNextTrack());
+      if (response?.ok === false) {
+        throw new Error(response.message || "Следующий трек недоступен.");
+      }
+
+      currentTrackId = response.trackId || "";
+      currentTrackTitle = response.trackTitle || "";
+      isStartingPlayback = true;
+      suppressPlaybackErrorsUntilMs = Date.now() + 2500;
+      await refreshQueueState();
+    });
+    if (!commandExecuted) {
+      return;
+    }
+
     await refreshPlaybackState();
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -417,6 +434,10 @@ async function refreshPlaybackState() {
 
     currentTrackId = latestPlaybackState.trackId || currentTrackId;
     currentTrackTitle = latestPlaybackState.trackTitle || currentTrackTitle;
+    latestQueueState.currentTrackId = response.trackId || latestQueueState.currentTrackId;
+    latestQueueState.currentTrackTitle = response.trackTitle || latestQueueState.currentTrackTitle;
+    latestQueueState.canPlayPrevious = Boolean(response.canPlayPrevious);
+    latestQueueState.canPlayNext = Boolean(response.canPlayNext);
     hasLoadedTrack = latestPlaybackState.state !== "idle";
     isPlaybackPaused = latestPlaybackState.state === "paused";
 
@@ -533,7 +554,12 @@ async function handleTrackListClick(event) {
   }
 
   if (trackButtonElement.dataset.action === "queue-track") {
-    enqueueTrack(track);
+    try {
+      await enqueueTrack(track);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      setPlaybackStatus("Ошибка очереди", errorMessage);
+    }
     return;
   }
 
@@ -557,8 +583,21 @@ async function handleQueueClick(event) {
   }
 
   const trackId = removeButtonElement.dataset.trackId || "";
-  queuedTracks = queuedTracks.filter((track) => track.id !== trackId);
-  renderQueue();
+  if (typeof window.removeQueuedTrack !== "function") {
+    return;
+  }
+
+  try {
+    const response = normalizeBridgePayload(await window.removeQueuedTrack({ trackId }));
+    if (response?.ok === false) {
+      throw new Error(response.message || "Не удалось удалить трек из очереди.");
+    }
+
+    await refreshQueueState();
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    setPlaybackStatus("Ошибка очереди", errorMessage);
+  }
 }
 
 async function handlePlaybackToggle() {
@@ -595,20 +634,27 @@ async function handlePlaybackToggle() {
 }
 
 async function handlePrevTrack() {
-  if (playbackHistory.length < 2) {
-    return;
-  }
-
-  playbackHistory.pop();
-  const previousTrack =
-    playbackHistory.length > 0 ? playbackHistory[playbackHistory.length - 1] : null;
-  if (!previousTrack) {
-    syncTransportButtons();
+  if (typeof window.playPreviousTrack !== "function") {
     return;
   }
 
   try {
-    await playTrackById(previousTrack.id, previousTrack.title, { recordHistory: false });
+    const commandExecuted = await runTransportCommand(async () => {
+      const response = normalizeBridgePayload(await window.playPreviousTrack());
+      if (response?.ok === false) {
+        throw new Error(response.message || "Предыдущий трек недоступен.");
+      }
+
+      currentTrackId = response.trackId || "";
+      currentTrackTitle = response.trackTitle || "";
+      isStartingPlayback = true;
+      suppressPlaybackErrorsUntilMs = Date.now() + 2500;
+      await refreshQueueState();
+    });
+    if (!commandExecuted) {
+      return;
+    }
+
     await refreshPlaybackState();
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -668,6 +714,7 @@ async function initializePage() {
     return;
   }
 
+  await refreshQueueState();
   await refreshPlaybackState();
   await loadFeaturedTracks();
   startPlaybackPolling();
