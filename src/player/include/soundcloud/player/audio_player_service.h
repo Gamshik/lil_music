@@ -8,7 +8,7 @@
 
 namespace soundcloud::player {
 
-class media_foundation_audio_backend;
+class media_engine_audio_backend;
 
 /**
  * Базовый адаптер плеера.
@@ -50,7 +50,7 @@ public:
     [[nodiscard]] core::domain::playback_state get_playback_state() const override;
 
 private:
-    std::unique_ptr<media_foundation_audio_backend> backend_;
+    std::unique_ptr<media_engine_audio_backend> backend_;
 };
 
 }  // namespace soundcloud::player

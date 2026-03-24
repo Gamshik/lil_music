@@ -2,12 +2,12 @@
 
 #include <utility>
 
-#include "media_foundation_audio_backend.h"
+#include "media_engine_audio_backend.h"
 
 namespace soundcloud::player {
 
 audio_player_service::audio_player_service()
-    : backend_(std::make_unique<media_foundation_audio_backend>()) {}
+    : backend_(std::make_unique<media_engine_audio_backend>()) {}
 
 audio_player_service::~audio_player_service() = default;
 

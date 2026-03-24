@@ -166,7 +166,7 @@ std::vector<ui_binding> app_bridge::get_bindings() const {
 }
 
 std::string app_bridge::build_app_info_response() const {
-    return R"({"ok":true,"applicationName":"Lil Music","bridgeStatus":"connected","playbackBackend":"Media Foundation"})";
+    return R"({"ok":true,"applicationName":"Lil Music","bridgeStatus":"connected","playbackBackend":"Media Foundation Media Engine"})";
 }
 
 std::string app_bridge::build_get_playback_state_response() const {

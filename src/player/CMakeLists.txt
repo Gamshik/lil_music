@@ -1,5 +1,5 @@
 add_library(soundcloud_player
-    src/media_foundation_audio_backend.cpp
+    src/media_engine_audio_backend.cpp
     src/audio_player_service.cpp
 )
 
@@ -16,7 +16,7 @@ target_link_libraries(soundcloud_player
 )
 
 if(WIN32)
-    target_link_libraries(soundcloud_player PRIVATE mfplay mfplat mf)
+    target_link_libraries(soundcloud_player PRIVATE mfplat mf mfuuid ole32)
 endif()
 
 include(${PROJECT_SOURCE_DIR}/cmake/project_options.cmake)
