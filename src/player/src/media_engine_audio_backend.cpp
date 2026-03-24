@@ -277,6 +277,7 @@ public:
             current_stream_url_.clear();
             media_ready_ = false;
             should_start_playback_when_ready_ = false;
+            play_requested_for_pending_source_ = false;
             playback_state_.status = core::domain::playback_status::loading;
             playback_state_.stream_url = stream_url;
             playback_state_.error_message.clear();
@@ -299,11 +300,9 @@ public:
             std::scoped_lock lock(state_mutex_);
             if (!pending_stream_url_.empty() && !media_ready_) {
                 should_start_playback_when_ready_ = true;
+                play_requested_for_pending_source_ = true;
                 playback_state_.status = core::domain::playback_status::loading;
-                return;
-            }
-
-            if (current_stream_url_.empty()) {
+            } else if (current_stream_url_.empty()) {
                 playback_state_.status = core::domain::playback_status::idle;
                 playback_state_.error_message.clear();
                 return;
@@ -327,6 +326,7 @@ public:
         {
             std::scoped_lock lock(state_mutex_);
             should_start_playback_when_ready_ = false;
+            play_requested_for_pending_source_ = false;
 
             if (!pending_stream_url_.empty() && !media_ready_) {
                 playback_state_.status = core::domain::playback_status::paused;
@@ -484,6 +484,7 @@ private:
 
     void handle_media_ready() {
         bool should_play = false;
+        bool play_already_requested = false;
         {
             std::scoped_lock lock(state_mutex_);
             if (pending_stream_url_.empty()) {
@@ -497,6 +498,7 @@ private:
             playback_state_.duration_ms =
                 seconds_to_milliseconds(media_engine_.get()->GetDuration());
             should_play = should_start_playback_when_ready_;
+            play_already_requested = play_requested_for_pending_source_;
 
             if (!should_play) {
                 playback_state_.status = core::domain::playback_status::paused;
@@ -508,7 +510,10 @@ private:
             return;
         }
 
-        throw_if_failed(media_engine_.get()->Play(), "Автоматический старт воспроизведения");
+        if (!play_already_requested) {
+            throw_if_failed(media_engine_.get()->Play(), "Автоматический старт воспроизведения");
+        }
+
         std::scoped_lock lock(state_mutex_);
         playback_state_.status = core::domain::playback_status::loading;
         playback_state_.error_message.clear();
@@ -588,6 +593,7 @@ private:
         current_stream_url_.clear();
         media_ready_ = false;
         should_start_playback_when_ready_ = false;
+        play_requested_for_pending_source_ = false;
         playback_state_.status = core::domain::playback_status::error;
         playback_state_.stream_url.clear();
         playback_state_.position_ms = 0;
@@ -604,6 +610,7 @@ private:
     std::string current_stream_url_;
     core::domain::playback_state playback_state_{};
     bool should_start_playback_when_ready_ = false;
+    bool play_requested_for_pending_source_ = false;
     bool media_ready_ = false;
     bool should_uninitialize_com_ = false;
     bool media_foundation_started_ = false;
