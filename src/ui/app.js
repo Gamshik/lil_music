@@ -91,6 +91,25 @@ function setPlaybackToggleState({ disabled, paused }) {
   playbackToggleButtonElement.textContent = paused ? "Продолжить" : "Пауза";
 }
 
+function markPendingTrackSwitch(trackId, trackTitle) {
+  latestPlaybackState = {
+    ...latestPlaybackState,
+    state: "loading",
+    trackId: trackId || latestPlaybackState.trackId,
+    trackTitle: trackTitle || latestPlaybackState.trackTitle,
+    positionMs: 0,
+    durationMs: 0,
+  };
+  currentTrackId = latestPlaybackState.trackId || currentTrackId;
+  currentTrackTitle = latestPlaybackState.trackTitle || currentTrackTitle;
+  hasLoadedTrack = true;
+  isPlaybackPaused = false;
+  setPlaybackToggleState({ disabled: true, paused: false });
+  setPlaybackProgress(0, 0);
+  setPlaybackStatus("Загрузка", currentTrackTitle || "Подготавливаем трек...");
+  syncTransportButtons();
+}
+
 function mapPlaybackStateLabel(state) {
   switch (state) {
     case "loading":
@@ -367,6 +386,7 @@ async function playTrackById(trackId, title) {
 
     currentTrackId = response.trackId || trackId;
     currentTrackTitle = response.trackTitle || title;
+    markPendingTrackSwitch(currentTrackId, currentTrackTitle);
 
     await refreshQueueState();
     syncTransportButtons();
@@ -395,6 +415,7 @@ async function playNextTrackIfAvailable() {
       currentTrackTitle = response.trackTitle || "";
       isStartingPlayback = true;
       suppressPlaybackErrorsUntilMs = Date.now() + 2500;
+      markPendingTrackSwitch(currentTrackId, currentTrackTitle);
       await refreshQueueState();
     });
     if (!commandExecuted) {
@@ -649,6 +670,7 @@ async function handlePrevTrack() {
       currentTrackTitle = response.trackTitle || "";
       isStartingPlayback = true;
       suppressPlaybackErrorsUntilMs = Date.now() + 2500;
+      markPendingTrackSwitch(currentTrackId, currentTrackTitle);
       await refreshQueueState();
     });
     if (!commandExecuted) {
