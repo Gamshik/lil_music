@@ -338,6 +338,11 @@ public:
     [[nodiscard]] core::domain::playback_state get_playback_state() const {
         std::scoped_lock lock(state_mutex_);
         core::domain::playback_state playback_state = playback_state_;
+        if (is_request_pending_locked()) {
+            playback_state.status = core::domain::playback_status::loading;
+            return playback_state;
+        }
+
         playback_state.status = read_native_playback_status(playback_state.status);
         playback_state.position_ms = query_position_milliseconds();
         playback_state.duration_ms = query_duration_milliseconds();
@@ -460,7 +465,15 @@ private:
 
     void update_status(const core::domain::playback_status status) {
         std::scoped_lock lock(state_mutex_);
+        if (is_request_pending_locked()) {
+            return;
+        }
+
         playback_state_.status = status;
+    }
+
+    [[nodiscard]] bool is_request_pending_locked() const {
+        return !pending_stream_url_.empty() && !media_item_ready_;
     }
 
     core::domain::playback_status read_native_playback_status(
