@@ -32,6 +32,15 @@ std::string build_error_response(const std::string& message) {
     return response.str();
 }
 
+std::string build_loading_response(const std::string& track_id, const std::string& track_title) {
+    std::ostringstream response;
+    response << R"({"ok":true,"state":"loading","trackId":)"
+             << bridge_json_codec::escape_string(track_id)
+             << R"(,"trackTitle":)" << bridge_json_codec::escape_string(track_title)
+             << '}';
+    return response.str();
+}
+
 std::string serialize_track(const core::domain::track& track) {
     std::ostringstream serialized_track;
     serialized_track << '{'
@@ -300,6 +309,10 @@ std::string app_bridge::build_play_track_response(const std::string& request_jso
             track_title = known_track->title;
         }
 
+        if (get_playback_state_use_case_.execute().status == core::domain::playback_status::loading) {
+            return build_loading_response(track_id, track_title);
+        }
+
         play_track_use_case_.execute(track_id);
         playback_session_.mark_track_started(track_id);
 
@@ -318,6 +331,10 @@ std::string app_bridge::build_play_previous_track_response() const {
         const std::optional<core::domain::track> previous_track = playback_session_.peek_previous_track();
         if (!previous_track.has_value()) {
             return build_error_response("Предыдущий трек недоступен.");
+        }
+
+        if (get_playback_state_use_case_.execute().status == core::domain::playback_status::loading) {
+            return build_loading_response(previous_track->id, previous_track->title);
         }
 
         play_track_use_case_.execute(previous_track->id);
@@ -340,6 +357,10 @@ std::string app_bridge::build_play_next_track_response() const {
         const std::optional<core::domain::track> next_track = playback_session_.peek_next_track();
         if (!next_track.has_value()) {
             return build_error_response("Следующий трек недоступен.");
+        }
+
+        if (get_playback_state_use_case_.execute().status == core::domain::playback_status::loading) {
+            return build_loading_response(next_track->id, next_track->title);
         }
 
         play_track_use_case_.execute(next_track->id);

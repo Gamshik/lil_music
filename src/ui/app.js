@@ -64,6 +64,10 @@ function setBridgeStatus(title, details) {
   appNameElement.textContent = details;
 }
 
+function isOfflineMode() {
+  return typeof navigator !== "undefined" && navigator.onLine === false;
+}
+
 function setPlaybackStatus(state, details) {
   playbackStatusElement.textContent = state;
   currentTrackElement.textContent = details;
@@ -372,6 +376,11 @@ async function playTrackById(trackId, title) {
     return false;
   }
 
+  if (isOfflineMode()) {
+    setPlaybackStatus("Нет сети", "Для запуска нового трека требуется доступ к SoundCloud API.");
+    return false;
+  }
+
   return runTransportCommand(async () => {
     isStartingPlayback = true;
     suppressPlaybackErrorsUntilMs = Date.now() + 2500;
@@ -401,6 +410,11 @@ async function playNextTrackIfAvailable() {
   isAutoAdvancing = true;
 
   try {
+    if (isOfflineMode()) {
+      setPlaybackStatus("Нет сети", "Следующий трек нельзя подготовить без доступа к SoundCloud API.");
+      return;
+    }
+
     if (typeof window.playNextTrack !== "function") {
       return;
     }
@@ -513,6 +527,12 @@ async function loadFeaturedTracks() {
     return;
   }
 
+  if (isOfflineMode()) {
+    searchSummaryElement.textContent = "Нет подключения к сети. Стартовая витрина будет загружена, когда интернет появится.";
+    renderTracks([], "Оффлайн-режим: популярные треки недоступны без сети.");
+    return;
+  }
+
   searchSummaryElement.textContent = "Загружаем популярные треки...";
 
   try {
@@ -543,6 +563,12 @@ async function handleSearchSubmit(event) {
   const query = searchQueryElement.value.trim();
   const limit = Number.parseInt(searchLimitElement.value, 10) || 24;
   const offset = Number.parseInt(searchOffsetElement.value, 10) || 0;
+
+  if (isOfflineMode()) {
+    searchSummaryElement.textContent = "Нет подключения к сети. Поиск по SoundCloud временно недоступен.";
+    renderTracks([], "Оффлайн-режим: поиск временно недоступен.");
+    return;
+  }
 
   searchSummaryElement.textContent = "Отправляем запрос в native bridge...";
 
@@ -738,7 +764,9 @@ async function initializePage() {
 
   await refreshQueueState();
   await refreshPlaybackState();
-  await loadFeaturedTracks();
+  window.setTimeout(() => {
+    void loadFeaturedTracks();
+  }, 50);
   startPlaybackPolling();
 }
 

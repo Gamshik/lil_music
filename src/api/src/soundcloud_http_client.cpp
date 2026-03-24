@@ -295,7 +295,16 @@ std::string soundcloud_http_client::perform_get_request(const std::string& path_
         throw make_winhttp_error("Включение HTTP decompression");
     }
 
-    if (WinHttpSetTimeouts(session_handle.get(), 5000, 5000, 10000, 10000) == FALSE) {
+    constexpr int resolve_timeout_ms = 2000;
+    constexpr int connect_timeout_ms = 2000;
+    constexpr int send_timeout_ms = 3000;
+    constexpr int receive_timeout_ms = 4000;
+    if (WinHttpSetTimeouts(
+            session_handle.get(),
+            resolve_timeout_ms,
+            connect_timeout_ms,
+            send_timeout_ms,
+            receive_timeout_ms) == FALSE) {
         throw make_winhttp_error("Настройка HTTP timeout");
     }
 
