@@ -91,6 +91,10 @@ void throw_if_failed(const HRESULT result_code, const std::string_view operation
     }
 }
 
+void ignore_failed_hresult(const HRESULT result_code) {
+    (void)result_code;
+}
+
 std::wstring utf8_to_utf16(const std::string& value) {
     if (value.empty()) {
         return {};
@@ -244,6 +248,7 @@ public:
         }
 
         const std::wstring wide_stream_url = utf8_to_utf16(stream_url);
+        reset_media_item();
 
         std::scoped_lock lock(state_mutex_);
         const std::uint64_t request_token = ++last_request_token_;
@@ -473,6 +478,16 @@ private:
 
     [[nodiscard]] bool is_request_pending_locked() const {
         return !pending_stream_url_.empty() && !media_item_ready_;
+    }
+
+    void reset_media_item() {
+        if (media_player_.get() == nullptr) {
+            return;
+        }
+
+        ignore_failed_hresult(media_player_.get()->Pause());
+        ignore_failed_hresult(media_player_.get()->Stop());
+        ignore_failed_hresult(media_player_.get()->ClearMediaItem());
     }
 
     void fail_request_locked(const std::string& error_message) {
