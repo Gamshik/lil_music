@@ -301,9 +301,9 @@ public:
             }
 
             if (current_stream_url_.empty()) {
-                playback_state_.status = core::domain::playback_status::error;
-                playback_state_.error_message = "Плеер ещё не загрузил аудиопоток.";
-                throw std::runtime_error("Плеер ещё не загрузил аудиопоток.");
+                playback_state_.status = core::domain::playback_status::idle;
+                playback_state_.error_message.clear();
+                return;
             }
         }
 
@@ -456,6 +456,10 @@ private:
         }
     }
 
+    [[nodiscard]] bool has_active_source_locked() const {
+        return !pending_stream_url_.empty() || !current_stream_url_.empty();
+    }
+
     void handle_media_ready() {
         bool should_play = false;
         {
@@ -500,6 +504,12 @@ private:
             return;
         }
 
+        if (!has_active_source_locked()) {
+            playback_state_.status = core::domain::playback_status::idle;
+            playback_state_.error_message.clear();
+            return;
+        }
+
         playback_state_.status = core::domain::playback_status::paused;
         playback_state_.error_message.clear();
     }
@@ -513,6 +523,15 @@ private:
     }
 
     void handle_media_error() {
+        {
+            std::scoped_lock lock(state_mutex_);
+            if (!has_active_source_locked()) {
+                playback_state_.status = core::domain::playback_status::idle;
+                playback_state_.error_message.clear();
+                return;
+            }
+        }
+
         com_ptr<IMFMediaError> media_error;
         std::string error_message = "Media Engine завершил воспроизведение с неизвестной ошибкой.";
 
