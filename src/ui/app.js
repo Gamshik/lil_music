@@ -217,7 +217,7 @@ async function refreshQueueState() {
   renderQueue();
 }
 
-async function enqueueTrack(track) {
+async function enqueueTrackRequest(track) {
   if (!track || !track.id || typeof window.enqueueTrack !== "function") {
     return;
   }
@@ -555,7 +555,7 @@ async function handleTrackListClick(event) {
 
   if (trackButtonElement.dataset.action === "queue-track") {
     try {
-      await enqueueTrack(track);
+      await enqueueTrackRequest(track);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       setPlaybackStatus("Ошибка очереди", errorMessage);
