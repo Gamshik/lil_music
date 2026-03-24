@@ -88,7 +88,6 @@ std::vector<core::domain::track> soundcloud_api_client::parse_and_cache_tracks(
 
     {
         std::scoped_lock lock(playback_reference_mutex_);
-        playback_reference_by_track_id_.clear();
         for (track_playback_reference& playback_reference : parsed_payload.playback_references) {
             playback_reference_by_track_id_.insert_or_assign(
                 playback_reference.track_id,
