@@ -172,8 +172,11 @@ std::string describe_media_engine_error(const USHORT error_code) {
 
 class media_engine_notify final : public IMFMediaEngineNotify {
 public:
-    explicit media_engine_notify(class media_engine_audio_backend::implementation& owner)
-        : owner_(owner) {}
+    media_engine_notify(
+        class media_engine_audio_backend::implementation& owner,
+        const std::uint64_t generation)
+        : owner_(owner),
+          generation_(generation) {}
 
     ULONG STDMETHODCALLTYPE AddRef() override {
         return ++reference_count_;
@@ -211,6 +214,7 @@ public:
 private:
     std::atomic<ULONG> reference_count_{1};
     class media_engine_audio_backend::implementation& owner_;
+    std::uint64_t generation_ = 0;
 };
 
 }  // namespace
@@ -236,7 +240,6 @@ public:
                 IID_PPV_ARGS(class_factory_.put())),
             "Создание Media Engine class factory");
 
-        notify_ = new media_engine_notify(*this);
         recreate_media_engine();
     }
 
@@ -379,7 +382,18 @@ public:
         return playback_state;
     }
 
-    void on_media_engine_event(const DWORD event, const DWORD_PTR param1, const DWORD param2) {
+    void on_media_engine_event(
+        const DWORD event,
+        const DWORD_PTR param1,
+        const DWORD param2,
+        const std::uint64_t generation) {
+        {
+            std::scoped_lock lock(state_mutex_);
+            if (generation != media_engine_generation_) {
+                return;
+            }
+        }
+
         (void)param1;
         (void)param2;
 
@@ -424,6 +438,14 @@ public:
 private:
     void recreate_media_engine() {
         shutdown_media_engine();
+
+        if (notify_ != nullptr) {
+            notify_->Release();
+            notify_ = nullptr;
+        }
+
+        ++media_engine_generation_;
+        notify_ = new media_engine_notify(*this, media_engine_generation_);
 
         com_ptr<IMFAttributes> attributes;
         throw_if_failed(MFCreateAttributes(attributes.put(), 1), "Создание attributes для Media Engine");
@@ -516,6 +538,12 @@ private:
 
     void handle_ended() {
         std::scoped_lock lock(state_mutex_);
+        if (!has_active_source_locked()) {
+            playback_state_.status = core::domain::playback_status::idle;
+            playback_state_.error_message.clear();
+            return;
+        }
+
         playback_state_.status = core::domain::playback_status::idle;
         playback_state_.position_ms = playback_state_.duration_ms;
         should_start_playback_when_ready_ = false;
@@ -571,6 +599,7 @@ private:
     com_ptr<IMFMediaEngineClassFactory> class_factory_;
     com_ptr<IMFMediaEngine> media_engine_;
     media_engine_notify* notify_ = nullptr;
+    std::uint64_t media_engine_generation_ = 0;
     std::string pending_stream_url_;
     std::string current_stream_url_;
     core::domain::playback_state playback_state_{};
@@ -584,7 +613,7 @@ HRESULT media_engine_notify::EventNotify(
     const DWORD event,
     const DWORD_PTR param1,
     const DWORD param2) {
-    owner_.on_media_engine_event(event, param1, param2);
+    owner_.on_media_engine_event(event, param1, param2, generation_);
     return S_OK;
 }
 
