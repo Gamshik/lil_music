@@ -3,103 +3,169 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SoundCloud Desktop</title>
+    <title>LilMusic</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
-  <body>
+  <body data-playback-state="idle">
+    <div class="ambient ambient-cyan" aria-hidden="true"></div>
+    <div class="ambient ambient-amber" aria-hidden="true"></div>
+
     <main class="app-shell">
-      <section class="hero">
-        <p class="eyebrow">SoundCloud Desktop</p>
-        <div class="hero-header">
-          <div>
-            <h1>Desktop shell уже живой, а поиск и playback идут через native bridge.</h1>
-            <p class="description">
-              Поиск работает через `api-v2.soundcloud.com`, а карточки треков приходят в web-layer
-              уже из C++ сценариев. Это базовая площадка для дальнейшего desktop-клиента.
-            </p>
+      <header class="topbar">
+        <div class="brand-group">
+          <span class="brand-mark">LM</span>
+          <div class="brand-copy">
+            <strong class="brand-title">LilMusic</strong>
+            <span class="brand-subtitle">тихий desktop-плеер для SoundCloud</span>
           </div>
-          <div class="status-card">
-            <span class="status-label">Bridge status</span>
-            <strong id="bridge-status">Подключение...</strong>
-            <span id="app-name" class="status-meta">Ожидание native-ответа</span>
-            <span id="playback-backend" class="status-meta">Playback backend: ожидание...</span>
-            <div class="status-divider"></div>
-            <span class="status-label">Playback</span>
-            <strong id="playback-status">Остановлено</strong>
-            <span id="current-track" class="status-meta">Трек ещё не выбран</span>
-            <div class="playback-progress">
-              <div id="playback-progress-track" class="progress-track" role="slider" aria-label="Playback progress">
-                <div id="playback-progress-fill" class="progress-fill"></div>
-              </div>
-              <div class="progress-time">
-                <span id="playback-position">0:00</span>
-                <span id="playback-duration">0:00</span>
-              </div>
+        </div>
+
+        <div class="topbar-status">
+          <strong id="bridge-status">Подключение...</strong>
+          <span id="app-name">Ожидание native-ответа</span>
+        </div>
+      </header>
+
+      <nav class="tabs" aria-label="Разделы приложения">
+        <button class="tab-button is-active" type="button" data-tab-target="home" aria-selected="true">
+          Главная
+        </button>
+        <button class="tab-button" type="button" data-tab-target="search" aria-selected="false">
+          Поиск
+        </button>
+        <button class="tab-button" type="button" data-tab-target="queue" aria-selected="false">
+          Очередь
+        </button>
+      </nav>
+
+      <section class="player-shell">
+        <div class="player-copy">
+          <div class="player-head">
+            <div>
+              <p class="eyebrow">Now playing</p>
+              <strong id="playback-status" class="playback-status">Остановлено</strong>
             </div>
-            <div class="playback-controls">
-              <button id="prev-track-button" class="secondary-button transport-button" type="button" disabled>
-                Prev
-              </button>
-              <button id="playback-toggle-button" class="secondary-button transport-button" type="button" disabled>
-                Пауза
-              </button>
-              <button id="next-track-button" class="secondary-button transport-button" type="button" disabled>
-                Next
-              </button>
+            <span class="player-backend" id="playback-backend">Playback backend: ожидание...</span>
+          </div>
+
+          <p id="current-track" class="current-track-title">Трек ещё не выбран</p>
+
+          <div class="playback-progress">
+            <div
+              id="playback-progress-track"
+              class="progress-track"
+              role="slider"
+              aria-label="Playback progress"
+            >
+              <div id="playback-progress-fill" class="progress-fill"></div>
+            </div>
+            <div class="progress-time">
+              <span id="playback-position">0:00</span>
+              <span id="playback-duration">0:00</span>
             </div>
           </div>
         </div>
-      </section>
 
-      <section class="search-panel">
-        <form id="search-form" class="search-form">
-          <div class="search-form-header">
-            <label class="search-label" for="search-query">Поиск треков</label>
-            <p class="search-hint">UI передаёт в native `query`, `limit` и `offset`.</p>
+        <div class="player-controls-wrap">
+          <div class="player-visualizer" aria-hidden="true">
+            <span class="visualizer-bar"></span>
+            <span class="visualizer-bar"></span>
+            <span class="visualizer-bar"></span>
+            <span class="visualizer-bar"></span>
           </div>
 
-          <div class="search-controls">
-            <input
-              id="search-query"
-              name="query"
-              type="search"
-              placeholder="Например, lo-fi, synthwave, ambient"
-              autocomplete="off"
-            />
-            <button type="submit">Искать через bridge</button>
-            <button id="load-featured-button" type="button" class="secondary-button compact-button">
-              Популярное
+          <div class="playback-controls">
+            <button id="prev-track-button" class="secondary-button transport-button" type="button" disabled>
+              Prev
+            </button>
+            <button id="playback-toggle-button" class="primary-button transport-button" type="button" disabled>
+              Пауза
+            </button>
+            <button id="next-track-button" class="secondary-button transport-button" type="button" disabled>
+              Next
             </button>
           </div>
-
-          <div class="search-parameters">
-            <label class="parameter-field" for="search-limit">
-              <span>Лимит</span>
-              <input id="search-limit" name="limit" type="number" min="1" max="50" value="24" />
-            </label>
-
-            <label class="parameter-field" for="search-offset">
-              <span>Смещение</span>
-              <input id="search-offset" name="offset" type="number" min="0" step="1" value="0" />
-            </label>
-          </div>
-        </form>
-
-        <div id="search-summary" class="search-summary">
-          Введи запрос и настрой pagination, после чего UI отправит параметры в `window.searchTracks(...)`.
         </div>
+      </section>
 
-        <section class="queue-panel">
-          <div class="queue-header">
-            <span class="search-label">Очередь</span>
-            <span id="queue-count" class="status-meta">Очередь пуста</span>
+      <section class="content-shell">
+        <section class="tab-panel is-active" data-tab-panel="home">
+          <div class="section-head">
+            <div>
+              <p class="section-kicker">Главная</p>
+              <h1>Популярное сейчас</h1>
+            </div>
+            <button id="load-featured-button" class="secondary-button" type="button">Обновить</button>
           </div>
-          <ul id="queue-list" class="queue-list"></ul>
+
+          <p id="featured-summary" class="section-summary">
+            Стартовая лента подгрузит треки, которые можно слушать сразу.
+          </p>
+
+          <ul id="featured-list" class="track-list"></ul>
         </section>
 
-        <ul id="tracks-list" class="tracks-list"></ul>
+        <section class="tab-panel" data-tab-panel="search" hidden>
+          <div class="section-head">
+            <div>
+              <p class="section-kicker">Поиск</p>
+              <h1>Найди нужный трек</h1>
+            </div>
+          </div>
+
+          <form id="search-form" class="search-form">
+            <label class="search-field" for="search-query">
+              <span class="field-label">Запрос</span>
+              <input
+                id="search-query"
+                name="query"
+                type="search"
+                placeholder="lofi, ambient, techno, jungle..."
+                autocomplete="off"
+              />
+            </label>
+
+            <div class="search-side">
+              <label class="parameter-field" for="search-limit">
+                <span class="field-label">Лимит</span>
+                <input id="search-limit" name="limit" type="number" min="1" max="50" value="24" />
+              </label>
+
+              <label class="parameter-field" for="search-offset">
+                <span class="field-label">Смещение</span>
+                <input id="search-offset" name="offset" type="number" min="0" step="1" value="0" />
+              </label>
+
+              <button type="submit" class="primary-button search-submit">Искать</button>
+            </div>
+          </form>
+
+          <p id="search-summary" class="section-summary">
+            Поиск работает через native bridge, но интерфейс остаётся быстрым и простым.
+          </p>
+
+          <ul id="tracks-list" class="track-list"></ul>
+        </section>
+
+        <section class="tab-panel" data-tab-panel="queue" hidden>
+          <div class="section-head">
+            <div>
+              <p class="section-kicker">Очередь</p>
+              <h1>Что будет дальше</h1>
+            </div>
+            <span id="queue-count" class="queue-count">Очередь пуста</span>
+          </div>
+
+          <p class="section-summary">
+            Добавленные вручную треки идут первыми. Если очередь пустая, включается следующий трек из
+            текущего списка.
+          </p>
+
+          <ul id="queue-list" class="queue-list"></ul>
+        </section>
       </section>
     </main>
+
     <script src="app.js"></script>
   </body>
 </html>

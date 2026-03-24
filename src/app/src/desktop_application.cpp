@@ -44,7 +44,7 @@ int desktop_application::run() {
         const platform::application_paths application_paths = application_paths_resolver_.resolve();
 
         const platform::window_configuration main_window_configuration{
-            .title = "Lil Music",
+            .title = "LilMusic",
             .width = 1360,
             .height = 860,
             .entry_file_path = application_paths.ui_entry_file,

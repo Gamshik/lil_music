@@ -5,7 +5,9 @@ const searchQueryElement = document.getElementById("search-query");
 const searchLimitElement = document.getElementById("search-limit");
 const searchOffsetElement = document.getElementById("search-offset");
 const searchSummaryElement = document.getElementById("search-summary");
+const featuredSummaryElement = document.getElementById("featured-summary");
 const tracksListElement = document.getElementById("tracks-list");
+const featuredListElement = document.getElementById("featured-list");
 const playbackBackendElement = document.getElementById("playback-backend");
 const playbackStatusElement = document.getElementById("playback-status");
 const currentTrackElement = document.getElementById("current-track");
@@ -19,13 +21,17 @@ const nextTrackButtonElement = document.getElementById("next-track-button");
 const loadFeaturedButtonElement = document.getElementById("load-featured-button");
 const queueCountElement = document.getElementById("queue-count");
 const queueListElement = document.getElementById("queue-list");
+const tabButtonElements = Array.from(document.querySelectorAll("[data-tab-target]"));
+const tabPanelElements = Array.from(document.querySelectorAll("[data-tab-panel]"));
+const pageRootElement = document.body;
 
 let currentTrackTitle = "";
 let currentTrackId = "";
 let hasLoadedTrack = false;
 let isPlaybackPaused = false;
 let playbackPollingTimer = null;
-let currentRenderedTracks = [];
+let searchRenderedTracks = [];
+let featuredRenderedTracks = [];
 let latestPlaybackState = {
   state: "idle",
   positionMs: 0,
@@ -46,6 +52,7 @@ let isAutoAdvancing = false;
 let isStartingPlayback = false;
 let isTransportCommandInFlight = false;
 let suppressPlaybackErrorsUntilMs = 0;
+let activeTabId = "home";
 
 function normalizeBridgePayload(payload) {
   if (typeof payload !== "string") {
@@ -62,6 +69,32 @@ function normalizeBridgePayload(payload) {
 function setBridgeStatus(title, details) {
   bridgeStatusElement.textContent = title;
   appNameElement.textContent = details;
+}
+
+function setActiveTab(nextTabId) {
+  activeTabId = nextTabId;
+
+  tabButtonElements.forEach((tabButtonElement) => {
+    const isActive = tabButtonElement.dataset.tabTarget === nextTabId;
+    tabButtonElement.classList.toggle("is-active", isActive);
+    tabButtonElement.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
+
+  tabPanelElements.forEach((tabPanelElement) => {
+    const isActive = tabPanelElement.dataset.tabPanel === nextTabId;
+    tabPanelElement.classList.toggle("is-active", isActive);
+    tabPanelElement.hidden = !isActive;
+  });
+}
+
+function setPlaybackVisualState(state) {
+  if (pageRootElement) {
+    pageRootElement.dataset.playbackState = state || "idle";
+  }
+
+  if (typeof document !== "undefined") {
+    document.title = currentTrackTitle ? `${currentTrackTitle} - LilMusic` : "LilMusic";
+  }
 }
 
 function isOfflineMode() {
@@ -111,6 +144,8 @@ function markPendingTrackSwitch(trackId, trackTitle) {
   setPlaybackToggleState({ disabled: true, paused: false });
   setPlaybackProgress(0, 0);
   setPlaybackStatus("Загрузка", currentTrackTitle || "Подготавливаем трек...");
+  setPlaybackVisualState("loading");
+  updateCurrentTrackHighlights();
   syncTransportButtons();
 }
 
@@ -161,10 +196,18 @@ function createArtworkElement(track) {
 
 function findTrackById(trackId) {
   return (
-    currentRenderedTracks.find((track) => track.id === trackId) ||
+    searchRenderedTracks.find((track) => track.id === trackId) ||
+    featuredRenderedTracks.find((track) => track.id === trackId) ||
     latestQueueState.queuedTracks.find((track) => track.id === trackId) ||
     null
   );
+}
+
+function updateCurrentTrackHighlights() {
+  const trackRowElements = document.querySelectorAll(".track-row[data-track-id], .queue-item[data-track-id]");
+  trackRowElements.forEach((trackRowElement) => {
+    trackRowElement.classList.toggle("is-current", trackRowElement.dataset.trackId === currentTrackId);
+  });
 }
 
 function syncTransportButtons() {
@@ -186,6 +229,7 @@ function renderQueue() {
     emptyQueueElement.className = "queue-item queue-item-empty";
     emptyQueueElement.textContent = "Следующим будет трек по текущему списку.";
     queueListElement.append(emptyQueueElement);
+    updateCurrentTrackHighlights();
     syncTransportButtons();
     return;
   }
@@ -193,6 +237,7 @@ function renderQueue() {
   queuedTracks.forEach((track) => {
     const queueItemElement = document.createElement("li");
     queueItemElement.className = "queue-item";
+    queueItemElement.dataset.trackId = track.id;
 
     const queueMetaElement = document.createElement("div");
     queueMetaElement.className = "queue-item-meta";
@@ -217,6 +262,7 @@ function renderQueue() {
     queueListElement.append(queueItemElement);
   });
 
+  updateCurrentTrackHighlights();
   syncTransportButtons();
 }
 
@@ -254,34 +300,38 @@ async function enqueueTrackRequest(track) {
 }
 
 function renderTracks(tracks, emptyMessage) {
-  currentRenderedTracks = Array.isArray(tracks) ? tracks : [];
-  tracksListElement.replaceChildren();
+  searchRenderedTracks = Array.isArray(tracks) ? tracks : [];
+  renderTrackCollection(tracksListElement, searchRenderedTracks, emptyMessage);
+}
 
-  if (currentRenderedTracks.length === 0) {
+function renderFeaturedTracks(tracks, emptyMessage) {
+  featuredRenderedTracks = Array.isArray(tracks) ? tracks : [];
+  renderTrackCollection(featuredListElement, featuredRenderedTracks, emptyMessage);
+}
+
+function renderTrackCollection(listElement, tracks, emptyMessage) {
+  listElement.replaceChildren();
+
+  if (tracks.length === 0) {
     const emptyStateElement = document.createElement("li");
-    emptyStateElement.className = "track-card track-card-empty";
+    emptyStateElement.className = "queue-item queue-item-empty";
     emptyStateElement.textContent = emptyMessage;
-    tracksListElement.append(emptyStateElement);
+    listElement.append(emptyStateElement);
+    updateCurrentTrackHighlights();
     syncTransportButtons();
     return;
   }
 
-  currentRenderedTracks.forEach((track) => {
+  tracks.forEach((track) => {
     const trackElement = document.createElement("li");
-    trackElement.className = "track-card";
+    trackElement.className = "track-row";
+    trackElement.dataset.trackId = track.id;
 
-    const articleElement = document.createElement("article");
-    articleElement.className = "track-card-body";
+    const mainElement = document.createElement("div");
+    mainElement.className = "track-main";
 
-    const contentElement = document.createElement("div");
-    contentElement.className = "track-content";
-
-    const metaElement = document.createElement("div");
-    metaElement.className = "track-meta";
-
-    const badgeElement = document.createElement("span");
-    badgeElement.className = "track-badge";
-    badgeElement.textContent = "SoundCloud";
+    const topLineElement = document.createElement("div");
+    topLineElement.className = "track-topline";
 
     const titleElement = document.createElement("p");
     titleElement.className = "track-title";
@@ -313,14 +363,14 @@ function renderTracks(tracks, emptyMessage) {
     playButtonElement.dataset.title = track.title;
     playButtonElement.textContent = "Играть";
 
-    metaElement.append(badgeElement, idElement);
+    topLineElement.append(titleElement, idElement);
     actionsElement.append(queueButtonElement, playButtonElement);
-    contentElement.append(metaElement, titleElement, artistElement, actionsElement);
-    articleElement.append(createArtworkElement(track), contentElement);
-    trackElement.append(articleElement);
-    tracksListElement.append(trackElement);
+    mainElement.append(topLineElement, artistElement);
+    trackElement.append(createArtworkElement(track), mainElement, actionsElement);
+    listElement.append(trackElement);
   });
 
+  updateCurrentTrackHighlights();
   syncTransportButtons();
 }
 
@@ -475,6 +525,8 @@ async function refreshPlaybackState() {
     latestQueueState.canPlayNext = Boolean(response.canPlayNext);
     hasLoadedTrack = latestPlaybackState.state !== "idle";
     isPlaybackPaused = latestPlaybackState.state === "paused";
+    setPlaybackVisualState(latestPlaybackState.state);
+    updateCurrentTrackHighlights();
 
     const isPlaybackActiveState = ["loading", "playing", "paused"].includes(latestPlaybackState.state);
     if (isPlaybackActiveState && latestPlaybackState.trackId) {
@@ -516,6 +568,7 @@ async function refreshPlaybackState() {
     const errorMessage = error instanceof Error ? error.message : String(error);
     setPlaybackProgress(0, 0);
     setPlaybackStatus("Ошибка playback", errorMessage);
+    setPlaybackVisualState("error");
   } finally {
     syncTransportButtons();
   }
@@ -523,17 +576,17 @@ async function refreshPlaybackState() {
 
 async function loadFeaturedTracks() {
   if (typeof window.getFeaturedTracks !== "function") {
-    searchSummaryElement.textContent = "Bridge API популярных треков ещё не зарегистрирован.";
+    featuredSummaryElement.textContent = "Bridge API популярных треков ещё не зарегистрирован.";
     return;
   }
 
   if (isOfflineMode()) {
-    searchSummaryElement.textContent = "Нет подключения к сети. Стартовая витрина будет загружена, когда интернет появится.";
-    renderTracks([], "Оффлайн-режим: популярные треки недоступны без сети.");
+    featuredSummaryElement.textContent = "Нет подключения к сети. Главная лента появится, когда интернет вернётся.";
+    renderFeaturedTracks([], "Оффлайн-режим: популярные треки недоступны без сети.");
     return;
   }
 
-  searchSummaryElement.textContent = "Загружаем популярные треки...";
+  featuredSummaryElement.textContent = "Загружаем популярные треки...";
 
   try {
     const response = normalizeBridgePayload(await window.getFeaturedTracks({ limit: 12 }));
@@ -542,12 +595,12 @@ async function loadFeaturedTracks() {
     }
 
     const tracks = Array.isArray(response.tracks) ? response.tracks : [];
-    searchSummaryElement.textContent = `${response.title || "Популярное сейчас"}: ${tracks.length} совместимых трек(ов).`;
-    renderTracks(tracks, "SoundCloud не вернул совместимые треки для стартовой страницы.");
+    featuredSummaryElement.textContent = `${response.title || "Популярное сейчас"}: ${tracks.length} совместимых трек(ов).`;
+    renderFeaturedTracks(tracks, "SoundCloud не вернул совместимые треки для стартовой страницы.");
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    searchSummaryElement.textContent = `Ошибка загрузки стартовой витрины: ${errorMessage}`;
-    renderTracks([], "Не удалось загрузить популярные треки.");
+    featuredSummaryElement.textContent = `Ошибка загрузки стартовой витрины: ${errorMessage}`;
+    renderFeaturedTracks([], "Не удалось загрузить популярные треки.");
   }
 }
 
@@ -570,6 +623,7 @@ async function handleSearchSubmit(event) {
     return;
   }
 
+  setActiveTab("search");
   searchSummaryElement.textContent = "Отправляем запрос в native bridge...";
 
   try {
@@ -755,6 +809,10 @@ function startPlaybackPolling() {
 async function initializePage() {
   setPlaybackToggleState({ disabled: true, paused: false });
   setPlaybackProgress(0, 0);
+  setPlaybackVisualState("idle");
+  setActiveTab(activeTabId);
+  renderFeaturedTracks([], "Здесь появятся популярные треки.");
+  renderTracks([], "Результаты поиска появятся здесь.");
   renderQueue();
 
   const bridgeAvailable = await initializeBridgeStatus();
@@ -771,6 +829,9 @@ async function initializePage() {
 }
 
 searchFormElement.addEventListener("submit", handleSearchSubmit);
+featuredListElement.addEventListener("click", (event) => {
+  void handleTrackListClick(event);
+});
 tracksListElement.addEventListener("click", (event) => {
   void handleTrackListClick(event);
 });
@@ -790,7 +851,13 @@ playbackProgressTrackElement.addEventListener("click", (event) => {
   void handleProgressSeek(event);
 });
 loadFeaturedButtonElement.addEventListener("click", () => {
+  setActiveTab("home");
   void loadFeaturedTracks();
+});
+tabButtonElements.forEach((tabButtonElement) => {
+  tabButtonElement.addEventListener("click", () => {
+    setActiveTab(tabButtonElement.dataset.tabTarget || "home");
+  });
 });
 
 void initializePage();
