@@ -338,7 +338,8 @@ public:
     [[nodiscard]] core::domain::playback_state get_playback_state() const {
         std::scoped_lock lock(state_mutex_);
         core::domain::playback_state playback_state = playback_state_;
-        if (is_request_pending_locked()) {
+        if (playback_state.status != core::domain::playback_status::error &&
+            is_request_pending_locked()) {
             playback_state.status = core::domain::playback_status::loading;
             return playback_state;
         }
@@ -384,9 +385,7 @@ public:
             }
         } catch (const std::exception& exception) {
             std::scoped_lock lock(state_mutex_);
-            playback_state_.status = core::domain::playback_status::error;
-            last_error_message_ = exception.what();
-            playback_state_.error_message = last_error_message_;
+            fail_request_locked(exception.what());
         }
     }
 
@@ -474,6 +473,21 @@ private:
 
     [[nodiscard]] bool is_request_pending_locked() const {
         return !pending_stream_url_.empty() && !media_item_ready_;
+    }
+
+    void fail_request_locked(const std::string& error_message) {
+        pending_stream_url_.clear();
+        current_stream_url_.clear();
+        media_item_ready_ = false;
+        should_start_playback_when_ready_ = false;
+        pending_request_token_ = 0;
+        active_request_token_ = 0;
+        playback_state_.status = core::domain::playback_status::error;
+        playback_state_.stream_url.clear();
+        playback_state_.position_ms = 0;
+        playback_state_.duration_ms = 0;
+        last_error_message_ = error_message;
+        playback_state_.error_message = last_error_message_;
     }
 
     core::domain::playback_status read_native_playback_status(
