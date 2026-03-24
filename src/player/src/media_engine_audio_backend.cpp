@@ -269,7 +269,6 @@ public:
 
         const std::wstring wide_stream_url = utf8_to_utf16(stream_url);
         const bstr_ptr source_url(wide_stream_url);
-        recreate_media_engine();
 
         {
             std::scoped_lock lock(state_mutex_);
@@ -286,6 +285,7 @@ public:
         }
 
         try {
+            media_engine_.get()->Pause();
             throw_if_failed(media_engine_.get()->SetSource(source_url.get()), "Назначение media source");
             throw_if_failed(media_engine_.get()->Load(), "Запуск загрузки media source");
         } catch (const std::exception& exception) {
@@ -453,8 +453,7 @@ private:
             attributes.get()->SetUnknown(MF_MEDIA_ENGINE_CALLBACK, notify_),
             "Регистрация callback для Media Engine");
 
-        constexpr DWORD create_flags =
-            MF_MEDIA_ENGINE_AUDIOONLY | MF_MEDIA_ENGINE_WAITFORSTABLE_STATE;
+        constexpr DWORD create_flags = MF_MEDIA_ENGINE_AUDIOONLY;
         throw_if_failed(
             class_factory_.get()->CreateInstance(create_flags, attributes.get(), media_engine_.put()),
             "Создание Media Engine instance");
