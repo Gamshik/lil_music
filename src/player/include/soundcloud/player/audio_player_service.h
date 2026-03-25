@@ -11,8 +11,10 @@ namespace soundcloud::player {
 class media_foundation_audio_backend;
 
 /**
- * Базовый адаптер плеера.
- * Его задача — изолировать будущую audio-библиотеку от прикладных сценариев.
+ * Тонкий прикладной фасад плеера.
+ * Этот класс не содержит аудио-логики сам по себе: он только передаёт
+ * команды в реальный backend и удерживает domain/core от прямой зависимости
+ * на конкретную Windows-реализацию.
  */
 class audio_player_service final : public core::ports::i_audio_player {
 public:
@@ -25,27 +27,33 @@ public:
     audio_player_service& operator=(audio_player_service&&) noexcept;
 
     /**
-     * Сохраняет адрес аудиопотока для последующей загрузки реальным backend.
+     * Загружает новый аудиопоток в backend.
+     * На уровне core это выглядит как обычная команда, но реальная подготовка
+     * источника и обработка асинхронных событий происходят внутри backend-слоя.
      */
     void load(const std::string& stream_url) override;
 
     /**
-     * Переводит плеер в состояние воспроизведения.
+     * Запрашивает запуск воспроизведения.
+     * Если backend ещё догружает источник, команда может быть отложена до ready-state.
      */
     void play() override;
 
     /**
-     * Переводит плеер в состояние паузы.
+     * Ставит текущее воспроизведение на паузу.
+     * Важно, что это не сбрасывает источник, а только меняет transport state.
      */
     void pause() override;
 
     /**
      * Перематывает текущий трек к указанной позиции.
+     * Backend сам решает, можно ли выполнить seek на текущем этапе загрузки.
      */
     void seek_to(std::int64_t position_ms) override;
 
     /**
-     * Возвращает текущее состояние Media Foundation backend в доменном формате.
+     * Возвращает доменный снимок состояния backend-а.
+     * Это нужно bridge/UI, чтобы не вытаскивать из player native-детали напрямую.
      */
     [[nodiscard]] core::domain::playback_state get_playback_state() const override;
 

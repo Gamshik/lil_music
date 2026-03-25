@@ -12,6 +12,9 @@ namespace soundcloud::core::use_cases {
  */
 class toggle_favorite_use_case {
 public:
+    /**
+     * Создаёт use case поверх локального repository избранного.
+     */
     explicit toggle_favorite_use_case(ports::i_library_repository& library_repository);
 
     /**

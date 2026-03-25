@@ -11,6 +11,9 @@ namespace soundcloud::core::use_cases {
  */
 class get_playback_state_use_case {
 public:
+    /**
+     * Создаёт use case поверх порта чтения состояния плеера.
+     */
     explicit get_playback_state_use_case(const ports::i_audio_player& audio_player);
 
     /**

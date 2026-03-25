@@ -21,6 +21,10 @@ namespace soundcloud::bridge {
  */
 class app_bridge final : public i_ui_bridge {
 public:
+    /**
+     * Принимает готовые use case-ы и session-state.
+     * Bridge не создаёт инфраструктуру сам, а только маршрутизирует вызовы UI.
+     */
     app_bridge(
         core::use_cases::get_playback_state_use_case get_playback_state_use_case,
         core::use_cases::list_featured_tracks_use_case list_featured_tracks_use_case,

@@ -15,6 +15,10 @@ namespace soundcloud::app {
  */
 class desktop_application {
 public:
+    /**
+     * Собирает весь graph зависимостей приложения в одном месте.
+     * Именно здесь создаётся связка API, player, bridge и shell-уровня.
+     */
     desktop_application();
 
     /**

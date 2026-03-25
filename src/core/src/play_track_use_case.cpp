@@ -12,9 +12,12 @@ play_track_use_case::play_track_use_case(
 
 void play_track_use_case::execute(const std::string& track_id) const {
     if (track_id.empty()) {
+        // Пустой идентификатор всегда считается прикладной ошибкой, а не сетевой.
         throw std::invalid_argument("Не передан идентификатор трека для воспроизведения.");
     }
 
+    // Сначала резолвим актуальный stream URL, затем передаём его в player.
+    // Так core не зависит от деталей SoundCloud API и конкретного backend.
     const std::string stream_url = track_stream_resolver_.resolve_stream_url(track_id);
     audio_player_.load(stream_url);
     audio_player_.play();

@@ -55,6 +55,8 @@ let suppressPlaybackErrorsUntilMs = 0;
 let activeTabId = "home";
 
 function normalizeBridgePayload(payload) {
+  // Bridge может вернуть как уже распарсенный объект, так и JSON-строку.
+  // Нормализуем оба варианта в единый формат для остального UI-кода.
   if (typeof payload !== "string") {
     return payload;
   }
@@ -72,6 +74,8 @@ function setBridgeStatus(title, details) {
 }
 
 function setActiveTab(nextTabId) {
+  // UI deliberately держит вкладки локально на web-слое:
+  // это presentation-state, который не нужен native-слою.
   activeTabId = nextTabId;
 
   tabButtonElements.forEach((tabButtonElement) => {
@@ -88,6 +92,8 @@ function setActiveTab(nextTabId) {
 }
 
 function setPlaybackVisualState(state) {
+  // Состояние playback прокидываем в data-атрибут body, чтобы CSS мог
+  // анимировать shell и visualizer без ручного управления классами в каждом месте.
   if (pageRootElement) {
     pageRootElement.dataset.playbackState = state || "idle";
   }
@@ -129,6 +135,8 @@ function setPlaybackToggleState({ disabled, paused }) {
 }
 
 function markPendingTrackSwitch(trackId, trackTitle) {
+  // Локально переводим UI в loading сразу после успешной transport-команды,
+  // не дожидаясь следующего polling-цикла getPlaybackState().
   latestPlaybackState = {
     ...latestPlaybackState,
     state: "loading",
@@ -195,6 +203,9 @@ function createArtworkElement(track) {
 }
 
 function findTrackById(trackId) {
+  // Один и тот же трек может быть виден в разных представлениях:
+  // в поиске, на главной витрине или в очереди. Для UI-действий
+  // сначала собираем его из любого актуального списка.
   return (
     searchRenderedTracks.find((track) => track.id === trackId) ||
     featuredRenderedTracks.find((track) => track.id === trackId) ||
@@ -204,6 +215,8 @@ function findTrackById(trackId) {
 }
 
 function updateCurrentTrackHighlights() {
+  // Подсветка текущего трека полностью вычисляется на UI-стороне
+  // на основе trackId из playback state и queue state.
   const trackRowElements = document.querySelectorAll(".track-row[data-track-id], .queue-item[data-track-id]");
   trackRowElements.forEach((trackRowElement) => {
     trackRowElement.classList.toggle("is-current", trackRowElement.dataset.trackId === currentTrackId);
@@ -219,6 +232,7 @@ function syncTransportButtons() {
 }
 
 function renderQueue() {
+  // Очередь приходит из native session-state и здесь только отображается.
   const queuedTracks = latestQueueState.queuedTracks;
   queueCountElement.textContent =
     queuedTracks.length === 0 ? "Очередь пуста" : `${queuedTracks.length} в очереди`;
@@ -271,6 +285,8 @@ async function refreshQueueState() {
     return;
   }
 
+  // Очередь остаётся source of truth на native-слое, поэтому UI всегда
+  // перечитывает её через bridge после enqueue/remove/transport событий.
   const response = normalizeBridgePayload(await window.getQueueState());
   if (response?.ok === false) {
     throw new Error(response.message || "Не удалось получить состояние очереди.");
@@ -291,6 +307,8 @@ async function enqueueTrackRequest(track) {
     return;
   }
 
+  // После успешного enqueue сразу синхронизируем queue state заново,
+  // чтобы не дублировать правила вычисления очереди в JavaScript.
   const response = normalizeBridgePayload(await window.enqueueTrack({ trackId: track.id }));
   if (response?.ok === false) {
     throw new Error(response.message || "Не удалось добавить трек в очередь.");
@@ -310,6 +328,8 @@ function renderFeaturedTracks(tracks, emptyMessage) {
 }
 
 function renderTrackCollection(listElement, tracks, emptyMessage) {
+  // Главная и поиск рендерятся одним и тем же списочным шаблоном,
+  // различается только источник данных и контейнер.
   listElement.replaceChildren();
 
   if (tracks.length === 0) {
@@ -381,6 +401,7 @@ async function initializeBridgeStatus() {
   }
 
   try {
+    // Это первый smoke-check того, что webview bind-функции реально зарегистрированы.
     const appInfo = normalizeBridgePayload(await window.getAppInfo());
     setBridgeStatus(appInfo.bridgeStatus, appInfo.applicationName);
     playbackBackendElement.textContent = `Playback backend: ${appInfo.playbackBackend || "неизвестен"}`;
@@ -404,6 +425,8 @@ function hasPlaybackEnded(previousState, nextState) {
 }
 
 async function runTransportCommand(command) {
+  // На UI-уровне дополнительно сереализуем transport-команды,
+  // чтобы пользователь не накладывал play/next/prev друг на друга слишком быстро.
   if (isTransportCommandInFlight) {
     return false;
   }
@@ -432,6 +455,8 @@ async function playTrackById(trackId, title) {
   }
 
   return runTransportCommand(async () => {
+    // Ошибки playback в момент старта могут приходить с лагом,
+    // поэтому временно подавляем короткий transient-flash до следующего poll.
     isStartingPlayback = true;
     suppressPlaybackErrorsUntilMs = Date.now() + 2500;
     setPlaybackStatus("Подготовка...", `Запрашиваем native playback для: ${title}`);
@@ -457,6 +482,8 @@ async function playNextTrackIfAvailable() {
     return;
   }
 
+  // Auto-next и ручной next используют один и тот же transport flow.
+  // Флаг нужен, чтобы completion-based auto-advance не запускался повторно поверх себя.
   isAutoAdvancing = true;
 
   try {
@@ -502,6 +529,8 @@ async function refreshPlaybackState() {
   }
 
   try {
+    // Polling playback state intentionally остаётся простым:
+    // native-слой хранит реальное состояние, а UI только периодически его отражает.
     const response = normalizeBridgePayload(await window.getPlaybackState());
     if (response?.ok === false) {
       throw new Error(response.message || "Не удалось получить playback state.");
@@ -562,6 +591,8 @@ async function refreshPlaybackState() {
     );
 
     if (hasPlaybackEnded(previousPlaybackState, latestPlaybackState)) {
+      // Переход к следующему треку инициируется по completion token,
+      // который увеличивается native player-ом при реальном окончании playback.
       await playNextTrackIfAvailable();
     }
   } catch (error) {
@@ -589,6 +620,8 @@ async function loadFeaturedTracks() {
   featuredSummaryElement.textContent = "Загружаем популярные треки...";
 
   try {
+    // Главная витрина intentionally не смешивается с поиском:
+    // она живёт в отдельной вкладке и отдельном списке треков.
     const response = normalizeBridgePayload(await window.getFeaturedTracks({ limit: 12 }));
     if (response?.ok === false) {
       throw new Error(response.message || "Не удалось загрузить популярные треки.");
@@ -627,6 +660,7 @@ async function handleSearchSubmit(event) {
   searchSummaryElement.textContent = "Отправляем запрос в native bridge...";
 
   try {
+    // UI передаёт в bridge только query/limit/offset и не знает деталей SoundCloud API.
     const response = normalizeBridgePayload(await window.searchTracks({ query, limit, offset }));
     if (response?.ok === false) {
       throw new Error(response.message || "Поиск через bridge завершился ошибкой.");
@@ -643,6 +677,8 @@ async function handleSearchSubmit(event) {
 }
 
 async function handleTrackListClick(event) {
+  // Один обработчик обслуживает и витрину, и поиск:
+  // различается только то, из какого списка пришёл trackId.
   const trackButtonElement = event.target.closest("[data-action]");
   if (!trackButtonElement) {
     return;
@@ -706,6 +742,8 @@ async function handlePlaybackToggle() {
     return;
   }
 
+  // UI не хранит отдельно play/pause transport-state.
+  // Он просто выбирает нужную bridge-функцию по последнему playback snapshot.
   const functionName = isPlaybackPaused ? "resumePlayback" : "pausePlayback";
   if (typeof window[functionName] !== "function") {
     setPlaybackStatus("Bridge недоступен", "Native playback toggle API ещё не зарегистрирован.");
@@ -782,6 +820,8 @@ async function handleProgressSeek(event) {
   const targetPositionMs = Math.round(latestPlaybackState.durationMs * ratio);
 
   try {
+    // Seek отправляется в native player, а затем UI заново перечитывает playback state,
+    // чтобы не расходиться с реальной позицией backend-а.
     const response = normalizeBridgePayload(await window.seekPlayback({ positionMs: targetPositionMs }));
     if (response?.ok === false) {
       throw new Error(response.message || "Не удалось перемотать трек.");
@@ -801,12 +841,17 @@ function startPlaybackPolling() {
     clearInterval(playbackPollingTimer);
   }
 
+  // Сейчас UI использует простой polling вместо событий из native-слоя.
+  // Это не самая богатая модель, но она делает integration-path предсказуемым.
   playbackPollingTimer = window.setInterval(() => {
     void refreshPlaybackState();
   }, 1000);
 }
 
 async function initializePage() {
+  // Инициализация идёт в безопасном порядке:
+  // сначала приводим UI к базовому состоянию, затем проверяем bridge,
+  // потом подтягиваем queue/playback state и только после этого стартуем витрину и polling.
   setPlaybackToggleState({ disabled: true, paused: false });
   setPlaybackProgress(0, 0);
   setPlaybackVisualState("idle");

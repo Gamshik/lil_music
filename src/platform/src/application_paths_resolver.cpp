@@ -12,6 +12,7 @@ namespace {
 
 std::filesystem::path resolve_executable_path() {
 #ifdef _WIN32
+    // На Windows путь к исполняемому файлу нужен для поиска соседних runtime assets.
     std::vector<wchar_t> buffer(MAX_PATH);
 
     while (true) {
@@ -41,6 +42,8 @@ application_paths application_paths_resolver::resolve() const {
     const std::filesystem::path executable_path = resolve_executable_path();
     const std::filesystem::path executable_directory = executable_path.parent_path();
 
+    // UI entry point лежит рядом с exe в подпапке ui.
+    // Это позволяет запускать приложение без отдельной установки assets.
     return {
         .executable_directory = executable_directory,
         .ui_entry_file = executable_directory / "ui" / "index.html",

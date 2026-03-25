@@ -8,6 +8,8 @@ seek_playback_use_case::seek_playback_use_case(ports::i_audio_player& audio_play
     : audio_player_(audio_player) {}
 
 void seek_playback_use_case::execute(const std::int64_t position_ms) const {
+    // Отрицательные позиции не имеют смысла для playback, поэтому нормализуем
+    // их здесь, а не в UI или backend-реализации.
     audio_player_.seek_to((std::max)(position_ms, static_cast<std::int64_t>(0)));
 }
 

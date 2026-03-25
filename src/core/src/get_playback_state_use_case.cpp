@@ -6,6 +6,8 @@ get_playback_state_use_case::get_playback_state_use_case(const ports::i_audio_pl
     : audio_player_(audio_player) {}
 
 domain::playback_state get_playback_state_use_case::execute() const {
+    // Use case не знает ничего о backend-реализации: он просто запрашивает
+    // уже нормализованный снимок состояния у порта плеера.
     return audio_player_.get_playback_state();
 }
 

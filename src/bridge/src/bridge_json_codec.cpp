@@ -432,6 +432,8 @@ private:
 }  // namespace
 
 std::string bridge_json_codec::escape_string(const std::string& value) {
+    // Экранируем строку вручную, чтобы bridge не зависел от внешнего JSON-пакета
+    // для простых ответов и мог отдавать корректный JSON literal в любую сторону.
     std::ostringstream escaped_value;
     escaped_value << '"';
 
@@ -478,6 +480,8 @@ std::string bridge_json_codec::escape_string(const std::string& value) {
 std::optional<std::string> bridge_json_codec::read_string_field_from_first_argument(
     const std::string& request_json,
     const std::string& field_name) {
+    // Bridge вызывает JS-функции в формате массива аргументов.
+    // Здесь читаем только первый аргумент и достаём из него нужное поле.
     json_reader reader(request_json);
     return reader.read_string_field_from_first_argument(field_name);
 }
@@ -485,6 +489,7 @@ std::optional<std::string> bridge_json_codec::read_string_field_from_first_argum
 std::optional<int> bridge_json_codec::read_integer_field_from_first_argument(
     const std::string& request_json,
     const std::string& field_name) {
+    // Аналогично строковому варианту, но для числовых параметров вроде limit/offset/positionMs.
     json_reader reader(request_json);
     return reader.read_integer_field_from_first_argument(field_name);
 }

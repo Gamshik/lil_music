@@ -13,6 +13,9 @@ namespace soundcloud::core::use_cases {
  */
 class play_track_use_case {
 public:
+    /**
+     * Создаёт use case, который связывает разрешение stream URL и запуск playback.
+     */
     play_track_use_case(
         const ports::i_track_stream_resolver& track_stream_resolver,
         ports::i_audio_player& audio_player);

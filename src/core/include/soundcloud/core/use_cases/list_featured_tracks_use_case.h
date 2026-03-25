@@ -13,6 +13,9 @@ namespace soundcloud::core::use_cases {
  */
 class list_featured_tracks_use_case {
 public:
+    /**
+     * Создаёт use case поверх порта каталога, из которого берётся стартовая витрина.
+     */
     explicit list_featured_tracks_use_case(const ports::i_track_catalog& track_catalog);
 
     /**

@@ -22,14 +22,22 @@ soundcloud_api_client::soundcloud_api_client(soundcloud_api_configuration config
 
 std::vector<core::domain::track> soundcloud_api_client::search_tracks(
     const core::domain::track_search_request& request) const {
+    // Поиск и витрина используют общий путь: получаем сырой payload,
+    // затем в одном месте превращаем его в доменные треки и кэшируем
+    // playback metadata для последующего запуска.
     return parse_and_cache_tracks(http_client_.fetch_search_tracks_payload(request));
 }
 
 std::vector<core::domain::track> soundcloud_api_client::get_featured_tracks(const int limit) const {
+    // Стартовая витрина идёт тем же путем, что и поиск:
+    // сначала получаем публичный payload, потом парсим доменные треки и
+    // сразу сохраняем playback metadata для будущего запуска.
     return parse_and_cache_tracks(http_client_.fetch_featured_tracks_payload(limit));
 }
 
 std::string soundcloud_api_client::resolve_stream_url(const std::string& track_id) const {
+    // На момент нажатия Play мы уже не идём заново в search endpoint:
+    // используем playback metadata, сохранённую во время поиска/загрузки витрины.
     track_playback_reference playback_reference = require_track_playback_reference(track_id);
     std::vector<track_transcoding_reference> supported_transcodings;
     supported_transcodings.reserve(playback_reference.transcodings.size());
@@ -50,6 +58,8 @@ std::string soundcloud_api_client::resolve_stream_url(const std::string& track_i
 
     for (const track_transcoding_reference& transcoding : supported_transcodings) {
         try {
+            // SoundCloud возвращает не прямой media URL, а ссылку на transcoding endpoint.
+            // Сначала резолвим этот endpoint, и только потом отдаём backend готовый stream URL.
             const std::string payload = http_client_.fetch_transcoding_payload(
                 transcoding.url,
                 playback_reference.track_authorization);
@@ -75,6 +85,8 @@ track_playback_reference soundcloud_api_client::require_track_playback_reference
     std::scoped_lock lock(playback_reference_mutex_);
     const auto playback_reference_iterator = playback_reference_by_track_id_.find(track_id);
     if (playback_reference_iterator == playback_reference_by_track_id_.end()) {
+        // Playback завязан на metadata, полученную в search/featured flow.
+        // Если её нет в кэше, значит UI пытается воспроизвести трек вне текущей сессии данных.
         throw std::runtime_error(
             "Playback metadata для трека не найдена. Сначала выполните поиск заново.");
     }
@@ -89,6 +101,8 @@ std::vector<core::domain::track> soundcloud_api_client::parse_and_cache_tracks(
     {
         std::scoped_lock lock(playback_reference_mutex_);
         for (track_playback_reference& playback_reference : parsed_payload.playback_references) {
+            // Кэш живёт на уровне desktop-сессии и нужен, чтобы queue/history/next/prev
+            // могли переиспользовать уже увиденные треки без повторного запроса поиска.
             playback_reference_by_track_id_.insert_or_assign(
                 playback_reference.track_id,
                 std::move(playback_reference));

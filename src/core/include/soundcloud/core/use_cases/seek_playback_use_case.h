@@ -12,6 +12,9 @@ namespace soundcloud::core::use_cases {
  */
 class seek_playback_use_case {
 public:
+    /**
+     * Создаёт use case поверх порта плеера для операции seek.
+     */
     explicit seek_playback_use_case(ports::i_audio_player& audio_player);
 
     /**

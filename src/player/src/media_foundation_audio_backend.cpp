@@ -59,6 +59,8 @@ public:
     }
 
     [[nodiscard]] interface_type** put() {
+        // Для COM out-параметров сначала освобождаем старое значение,
+        // а потом отдаём адрес внутреннего указателя системному API.
         reset();
         return &value_;
     }
@@ -87,6 +89,8 @@ std::runtime_error make_hresult_error(
 
 void throw_if_failed(const HRESULT result_code, const std::string_view operation_name) {
     if (FAILED(result_code)) {
+        // Любую системную ошибку поднимаем в exception, чтобы backend мог
+        // перевести playback_state в error и не оставить UI в полупустом состоянии.
         throw make_hresult_error(operation_name, result_code);
     }
 }
@@ -100,6 +104,8 @@ std::wstring utf8_to_utf16(const std::string& value) {
         return {};
     }
 
+    // WinHTTP / Media Foundation ожидают wide-строки, поэтому URLs переводим
+    // в UTF-16 перед любым вызовом Windows API.
     const int wide_size = MultiByteToWideChar(
         CP_UTF8,
         MB_ERR_INVALID_CHARS,
@@ -127,6 +133,8 @@ std::wstring utf8_to_utf16(const std::string& value) {
 }
 
 std::int64_t read_propvariant_as_int64(const PROPVARIANT& value) {
+    // Media Foundation может вернуть позицию/длительность в разных числовых типах.
+    // Сводим их к одному доменному формату.
     switch (value.vt) {
         case VT_I8:
             return value.hVal.QuadPart;
@@ -142,6 +150,7 @@ std::int64_t read_propvariant_as_int64(const PROPVARIANT& value) {
 }
 
 std::int64_t convert_100ns_to_milliseconds(const std::int64_t value_100ns) {
+    // Native timebase Media Foundation измеряется в 100ns, а UI и core живут в ms.
     return value_100ns > 0 ? value_100ns / 10000 : 0;
 }
 
@@ -156,6 +165,8 @@ std::uint64_t read_media_item_request_token(IMFPMediaItem* media_item) {
         return 0;
     }
 
+    // Request token помогает отличить событие текущего load() от delayed event
+    // старого трека после быстрого Next/Prev.
     return static_cast<std::uint64_t>(user_data);
 }
 
@@ -204,6 +215,8 @@ private:
 class media_foundation_audio_backend::implementation {
 public:
     implementation() {
+        // Media Foundation требует свой COM lifecycle, поэтому backend сам
+        // поднимает apartment и потом закрывает его в destructor.
         const HRESULT com_result = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
         if (SUCCEEDED(com_result)) {
             should_uninitialize_com_ = true;
@@ -214,6 +227,7 @@ public:
         throw_if_failed(MFStartup(MF_VERSION), "Запуск Media Foundation");
         media_foundation_started_ = true;
 
+        // Callback нужен для асинхронных событий load/play/pause/end/error.
         callback_ = new media_player_callback(*this);
         const HRESULT create_player_result = MFPCreateMediaPlayer(
             nullptr,
@@ -248,6 +262,8 @@ public:
         }
 
         const std::wstring wide_stream_url = utf8_to_utf16(stream_url);
+        // Перед новым запросом сбрасываем старый item, чтобы события прошлой загрузки
+        // не перетёрли состояние нового трека.
         reset_media_item();
 
         std::scoped_lock lock(state_mutex_);
@@ -269,6 +285,7 @@ public:
             static_cast<DWORD_PTR>(request_token),
             nullptr);
         if (FAILED(create_item_result)) {
+            // Если источник не удалось подготовить сразу, переводим backend в error-state.
             playback_state_.status = core::domain::playback_status::error;
 
             if (create_item_result == MF_E_UNSUPPORTED_BYTESTREAM_TYPE) {
@@ -287,17 +304,20 @@ public:
         std::scoped_lock lock(state_mutex_);
 
         if (!pending_stream_url_.empty() && !media_item_ready_) {
+            // Пока item не готов, запоминаем intent на playback и оставляем loading-state.
             should_start_playback_when_ready_ = true;
             playback_state_.status = core::domain::playback_status::loading;
             return;
         }
 
         if (current_stream_url_.empty()) {
+            // Нельзя запускать transport без уже загруженного источника.
             playback_state_.status = core::domain::playback_status::error;
             playback_state_.error_message = "Плеер ещё не загрузил аудиопоток.";
             throw std::runtime_error("Плеер ещё не загрузил аудиопоток.");
         }
 
+        // На готовом item обычный Play() сразу переводит transport в playing.
         throw_if_failed(media_player_.get()->Play(), "Запуск воспроизведения");
         playback_state_.status = core::domain::playback_status::playing;
         playback_state_.stream_url = current_stream_url_;
@@ -309,9 +329,11 @@ public:
         should_start_playback_when_ready_ = false;
 
         if (current_stream_url_.empty() || !media_item_ready_) {
+            // Пауза до готовности источника не меняет domain state.
             return;
         }
 
+        // Pause не сбрасывает позицию и не теряет загруженный item.
         throw_if_failed(media_player_.get()->Pause(), "Пауза воспроизведения");
         playback_state_.status = core::domain::playback_status::paused;
         playback_state_.stream_url = current_stream_url_;
@@ -322,12 +344,14 @@ public:
         std::scoped_lock lock(state_mutex_);
 
         if (current_stream_url_.empty() || !media_item_ready_) {
+            // Seek имеет смысл только на уже готовом source.
             throw std::runtime_error("Нельзя перемотать трек, пока плеер не загрузил аудиопоток.");
         }
 
         PROPVARIANT position_value;
         PropVariantInit(&position_value);
         position_value.vt = VT_I8;
+        // Переводим миллисекунды UI в 100ns units, которые ждёт Media Foundation.
         position_value.hVal.QuadPart = (std::max)(position_ms, static_cast<std::int64_t>(0)) * 10000;
 
         const HRESULT set_position_result = media_player_.get()->SetPosition(
@@ -345,6 +369,7 @@ public:
         core::domain::playback_state playback_state = playback_state_;
         if (playback_state.status != core::domain::playback_status::error &&
             is_request_pending_locked()) {
+            // Пока идёт загрузка нового item, отдаём loading даже если native state ещё не стабилен.
             playback_state.status = core::domain::playback_status::loading;
             return playback_state;
         }
@@ -361,6 +386,8 @@ public:
         }
 
         try {
+            // Асинхронные события приходят из Media Foundation, поэтому тут только
+            // маршрутизация по типу события, а состояние обновляется в helper-ах ниже.
             switch (event_header->eEventType) {
                 case MFP_EVENT_TYPE_MEDIAITEM_CREATED:
                     handle_media_item_created(
@@ -408,6 +435,7 @@ private:
         }
 
         if (!is_expected_request) {
+            // Событие от старого request полностью игнорируем.
             return;
         }
 
@@ -431,6 +459,7 @@ private:
         }
 
         if (media_item_request_token != 0 && media_item_request_token != expected_request_token) {
+            // Аналогично защищаемся от delayed Set-event предыдущего трека.
             return;
         }
 
@@ -449,6 +478,7 @@ private:
         }
 
         if (should_play) {
+            // Если play запросили пока трек грузился, автоматически стартуем после ready-event.
             throw_if_failed(media_player_.get()->Play(), "Автоматический старт воспроизведения");
             std::scoped_lock lock(state_mutex_);
             playback_state_.status = core::domain::playback_status::playing;
@@ -462,6 +492,7 @@ private:
 
     void handle_playback_ended() {
         std::scoped_lock lock(state_mutex_);
+        // Completion token нужен UI, чтобы auto-next сработал один раз на реальный end-of-track.
         playback_state_.status = core::domain::playback_status::idle;
         playback_state_.position_ms = playback_state_.duration_ms;
         ++playback_state_.completion_token;
@@ -470,6 +501,7 @@ private:
     void update_status(const core::domain::playback_status status) {
         std::scoped_lock lock(state_mutex_);
         if (is_request_pending_locked()) {
+            // Пока новый item загружается, не даём старым transport events перетирать loading.
             return;
         }
 
@@ -485,12 +517,14 @@ private:
             return;
         }
 
+        // Мягко сбрасываем старый item перед новым load, чтобы не ловить смешанные события.
         ignore_failed_hresult(media_player_.get()->Pause());
         ignore_failed_hresult(media_player_.get()->Stop());
         ignore_failed_hresult(media_player_.get()->ClearMediaItem());
     }
 
     void fail_request_locked(const std::string& error_message) {
+        // Единая точка выхода из неудачного request path: чистим pending state и фиксируем error.
         pending_stream_url_.clear();
         current_stream_url_.clear();
         media_item_ready_ = false;
@@ -510,9 +544,13 @@ private:
         MFP_MEDIAPLAYER_STATE native_state = MFP_MEDIAPLAYER_STATE_EMPTY;
         const HRESULT get_state_result = media_player_.get()->GetState(&native_state);
         if (FAILED(get_state_result)) {
+            // Если native state не читается, безопаснее вернуть последний известный snapshot,
+            // чем подменить его ложным idle.
             return fallback_status;
         }
 
+        // Здесь мы сводим native MFP state к нашему доменному enum,
+        // чтобы bridge/UI вообще не знали о существовании Windows-specific статусов.
         switch (native_state) {
             case MFP_MEDIAPLAYER_STATE_PLAYING:
                 return core::domain::playback_status::playing;
@@ -535,6 +573,8 @@ private:
         PROPVARIANT position_value;
         PropVariantInit(&position_value);
 
+        // Текущая позиция читается отдельно от общего playback_state, чтобы UI мог
+        // отрисовывать progress без ожидания очередного transport event.
         const HRESULT get_position_result = media_player_.get()->GetPosition(
             MFP_POSITIONTYPE_100NS,
             &position_value);
@@ -553,6 +593,7 @@ private:
         PROPVARIANT duration_value;
         PropVariantInit(&duration_value);
 
+        // Длительность тоже берём напрямую из native player, а не храним только в snapshot.
         const HRESULT get_duration_result = media_player_.get()->GetDuration(
             MFP_POSITIONTYPE_100NS,
             &duration_value);

@@ -24,6 +24,8 @@ std::string read_optional_string_field(const json& object, const char* field_nam
 std::string read_track_id(const json& track_json) {
     const std::string track_urn = read_optional_string_field(track_json, "urn");
     if (!track_urn.empty()) {
+        // Для desktop-сессии URN удобнее обычного numeric id:
+        // он стабильно используется в queue/history и лучше соответствует SoundCloud-модели сущностей.
         return track_urn;
     }
 
@@ -54,6 +56,8 @@ std::string select_artist_name(const json& track_json) {
         const std::string publisher_artist =
             read_optional_string_field(*publisher_metadata_iterator, "artist");
         if (!publisher_artist.empty()) {
+            // Если SoundCloud отдал artist из publisher_metadata, это обычно более точное
+            // отображаемое имя релиза, чем просто username владельца трека.
             return publisher_artist;
         }
     }
@@ -98,6 +102,8 @@ std::string select_artwork_url(const json& track_json) {
         const std::string avatar_url =
             upscale_soundcloud_artwork(read_optional_string_field(*user_iterator, "avatar_url"));
         if (!avatar_url.empty()) {
+            // Не у каждого трека есть своя artwork. Тогда используем avatar автора,
+            // чтобы UI не разваливался на пустых заглушках слишком часто.
             return avatar_url;
         }
     }
@@ -121,6 +127,8 @@ std::vector<track_transcoding_reference> read_transcoding_references(const json&
 
     for (const json& transcoding_json : *transcodings_iterator) {
         if (!transcoding_json.is_object() || transcoding_json.value("snipped", false)) {
+            // Snipped-варианты и невалидные элементы пропускаем сразу:
+            // они не подходят для полного desktop playback flow.
             continue;
         }
 
@@ -149,6 +157,8 @@ bool has_supported_playback_transcoding(
     const std::vector<track_transcoding_reference>& transcodings) {
     for (const track_transcoding_reference& transcoding : transcodings) {
         if (transcoding.protocol == "progressive" && transcoding.mime_type == "audio/mpeg") {
+            // Этот фильтр синхронизирован с текущим player backend:
+            // UI показывает только те треки, которые реально можно попробовать воспроизвести.
             return true;
         }
     }
@@ -157,6 +167,8 @@ bool has_supported_playback_transcoding(
 }
 
 core::domain::track map_track(const json& track_json) {
+    // Держим mapping изолированным от бизнес-логики:
+    // parser знает только о форме JSON и о том, какие поля нужны UI/core.
     return core::domain::track{
         .id = read_track_id(track_json),
         .title = read_optional_string_field(track_json, "title"),
@@ -167,6 +179,8 @@ core::domain::track map_track(const json& track_json) {
 }
 
 track_playback_reference map_playback_reference(const json& track_json) {
+    // Playback reference хранится отдельно от самой track-модели:
+    // она нужна позже, при resolve_stream_url, и не должна засорять доменный track.
     return track_playback_reference{
         .track_id = read_track_id(track_json),
         .track_authorization = read_optional_string_field(track_json, "track_authorization"),
@@ -179,6 +193,8 @@ track_playback_reference map_playback_reference(const json& track_json) {
 parsed_track_search_payload soundcloud_track_search_response_parser::parse(
     const std::string& payload) const {
     try {
+        // Search payload в SoundCloud довольно богатый, но нашему приложению
+        // нужны только те треки, которые можно показать пользователю и потом воспроизвести.
         const json root_json = json::parse(payload);
         const auto collection_iterator = root_json.find("collection");
         if (collection_iterator == root_json.end() || !collection_iterator->is_array()) {
@@ -201,6 +217,8 @@ parsed_track_search_payload soundcloud_track_search_response_parser::parse(
 
             core::domain::track track = map_track(track_json);
             if (track.id.empty() || track.title.empty()) {
+                // Без id и title трек бессмысленно пускать дальше:
+                // он не будет ни стабильно адресоваться, ни нормально отображаться в UI.
                 continue;
             }
 
@@ -208,6 +226,8 @@ parsed_track_search_payload soundcloud_track_search_response_parser::parse(
             if (playback_reference.track_authorization.empty() ||
                 playback_reference.transcodings.empty() ||
                 !has_supported_playback_transcoding(playback_reference.transcodings)) {
+                // На текущем этапе parser сразу отбрасывает треки, которые не пройдут
+                // через наш playback pipeline. Это снижает количество "кликабельных, но неиграбельных" элементов в UI.
                 continue;
             }
 

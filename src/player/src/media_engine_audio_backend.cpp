@@ -59,6 +59,7 @@ public:
     }
 
     [[nodiscard]] interface_type** put() {
+        // COM out-параметр: сначала освобождаем прежний объект, потом отдаём адрес поля.
         reset();
         return &value_;
     }
@@ -125,6 +126,7 @@ std::wstring utf8_to_utf16(const std::string& value) {
 class bstr_ptr {
 public:
     explicit bstr_ptr(const std::wstring& value) {
+        // IMFMediaEngine принимает URL как BSTR, поэтому делаем явную аллокацию через OleAut32.
         value_ = SysAllocStringLen(value.c_str(), static_cast<UINT>(value.size()));
         if (value_ == nullptr && !value.empty()) {
             throw std::bad_alloc();
@@ -150,6 +152,7 @@ std::int64_t seconds_to_milliseconds(const double seconds) {
         return 0;
     }
 
+    // Media Engine возвращает timebase в секундах, а доменная модель живёт в миллисекундах.
     return static_cast<std::int64_t>(seconds * 1000.0);
 }
 
@@ -222,6 +225,7 @@ private:
 class media_engine_audio_backend::implementation {
 public:
     implementation() {
+        // Как и MFPlay backend, этот вариант сам поднимает COM + Media Foundation.
         const HRESULT com_result = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
         if (SUCCEEDED(com_result)) {
             should_uninitialize_com_ = true;
@@ -240,6 +244,7 @@ public:
                 IID_PPV_ARGS(class_factory_.put())),
             "Создание Media Engine class factory");
 
+        // Первый instance создаём сразу, чтобы backend был готов к load/play без доп. setup.
         recreate_media_engine();
     }
 
@@ -272,6 +277,7 @@ public:
 
         {
             std::scoped_lock lock(state_mutex_);
+            // Новый load сбрасывает предыдущий transport intent и переводит backend в loading.
             pending_stream_url_ = stream_url;
             current_stream_url_.clear();
             media_ready_ = false;
@@ -285,6 +291,7 @@ public:
         }
 
         try {
+            // Сначала останавливаем текущий playback intent, потом задаём новый source.
             media_engine_.get()->Pause();
             throw_if_failed(media_engine_.get()->SetSource(source_url.get()), "Назначение media source");
             throw_if_failed(media_engine_.get()->Load(), "Запуск загрузки media source");
@@ -299,10 +306,12 @@ public:
         {
             std::scoped_lock lock(state_mutex_);
             if (!pending_stream_url_.empty() && !media_ready_) {
+                // Если источник ещё грузится, только запоминаем намерение стартовать после ready-event.
                 should_start_playback_when_ready_ = true;
                 play_requested_for_pending_source_ = true;
                 playback_state_.status = core::domain::playback_status::loading;
             } else if (current_stream_url_.empty()) {
+                // Без source проигрывать нечего, поэтому тихо выходим в idle.
                 playback_state_.status = core::domain::playback_status::idle;
                 playback_state_.error_message.clear();
                 return;
@@ -310,6 +319,7 @@ public:
         }
 
         try {
+            // На готовом source Play() должен перевести движок в active state.
             throw_if_failed(media_engine_.get()->Play(), "Запуск воспроизведения");
             std::scoped_lock lock(state_mutex_);
             playback_state_.status = core::domain::playback_status::loading;
@@ -329,6 +339,7 @@ public:
             play_requested_for_pending_source_ = false;
 
             if (!pending_stream_url_.empty() && !media_ready_) {
+                // Пока идет load, UI может показать paused без обращения к native pause.
                 playback_state_.status = core::domain::playback_status::paused;
                 playback_state_.error_message.clear();
                 return;
@@ -345,6 +356,7 @@ public:
             return;
         }
 
+        // Pause для уже готового source сохраняет позицию и не ломает readiness state.
         throw_if_failed(media_engine_.get()->Pause(), "Пауза воспроизведения");
         std::scoped_lock lock(state_mutex_);
         playback_state_.status = core::domain::playback_status::paused;
@@ -355,10 +367,12 @@ public:
         {
             std::scoped_lock lock(state_mutex_);
             if (current_stream_url_.empty() || !media_ready_) {
+                // Перемотка допустима только после загрузки source.
                 throw std::runtime_error("Нельзя перемотать трек, пока плеер не загрузил аудиопоток.");
             }
         }
 
+        // Media Engine ждёт секунды, поэтому переводим ms в double seconds.
         throw_if_failed(
             media_engine_.get()->SetCurrentTime(static_cast<double>((std::max)(position_ms, static_cast<std::int64_t>(0))) / 1000.0),
             "Перемотка воспроизведения");
@@ -373,6 +387,7 @@ public:
         core::domain::playback_state playback_state = playback_state_;
 
         if (media_engine_.get() != nullptr) {
+            // Позицию и длительность берём из native engine, чтобы UI видел живой progress.
             playback_state.position_ms =
                 seconds_to_milliseconds(media_engine_.get()->GetCurrentTime());
             playback_state.duration_ms =
@@ -390,6 +405,7 @@ public:
         {
             std::scoped_lock lock(state_mutex_);
             if (generation != media_engine_generation_) {
+                // Callback от старого engine instance игнорируем полностью.
                 return;
             }
         }
@@ -398,6 +414,7 @@ public:
         (void)param2;
 
         try {
+            // Media Engine работает event-driven, поэтому тут только маршрутизация событий.
             switch (event) {
                 case MF_MEDIA_ENGINE_EVENT_LOADSTART:
                 case MF_MEDIA_ENGINE_EVENT_PROGRESS:
@@ -444,6 +461,8 @@ private:
             notify_ = nullptr;
         }
 
+        // Каждое пересоздание двигает generation, чтобы поздние события
+        // от старого engine не могли затереть состояние нового.
         ++media_engine_generation_;
         notify_ = new media_engine_notify(*this, media_engine_generation_);
 
@@ -461,6 +480,8 @@ private:
 
     void shutdown_media_engine() {
         if (media_engine_.get() != nullptr) {
+            // Перед уничтожением engine явно вызываем Shutdown, иначе можно оставить
+            // внутренние ресурсы Media Foundation в неопределённом состоянии.
             media_engine_.get()->Shutdown();
             media_engine_.reset();
         }
@@ -473,6 +494,7 @@ private:
         }
 
         if (!pending_stream_url_.empty() || should_start_playback_when_ready_) {
+            // Пока source догружается, UI должен видеть loading, а не transient paused/stopped.
             playback_state_.status = core::domain::playback_status::loading;
         }
     }
@@ -490,6 +512,7 @@ private:
                 return;
             }
 
+            // Когда источник готов, переносим его из pending в current и обновляем snapshot.
             current_stream_url_ = pending_stream_url_;
             pending_stream_url_.clear();
             media_ready_ = true;
@@ -510,6 +533,7 @@ private:
         }
 
         if (!play_already_requested) {
+            // Если Play не был вызван заранее, запускаем его после ready-event.
             throw_if_failed(media_engine_.get()->Play(), "Автоматический старт воспроизведения");
         }
 
@@ -520,6 +544,7 @@ private:
 
     void handle_playing() {
         std::scoped_lock lock(state_mutex_);
+        // Этот event приходит уже после успешного старта аудио.
         playback_state_.status = core::domain::playback_status::playing;
         playback_state_.error_message.clear();
     }
@@ -531,6 +556,7 @@ private:
         }
 
         if (!has_active_source_locked()) {
+            // Если source ещё не активен, pause event не должен переводить backend в странный state.
             playback_state_.status = core::domain::playback_status::idle;
             playback_state_.error_message.clear();
             return;
@@ -543,11 +569,13 @@ private:
     void handle_ended() {
         std::scoped_lock lock(state_mutex_);
         if (!has_active_source_locked()) {
+            // End-of-stream без активного source считаем безопасным idle.
             playback_state_.status = core::domain::playback_status::idle;
             playback_state_.error_message.clear();
             return;
         }
 
+        // Completion token нужен верхнему слою для надёжного auto-next.
         playback_state_.status = core::domain::playback_status::idle;
         playback_state_.position_ms = playback_state_.duration_ms;
         should_start_playback_when_ready_ = false;
@@ -558,6 +586,7 @@ private:
         {
             std::scoped_lock lock(state_mutex_);
             if (!has_active_source_locked()) {
+                // Ошибка без active source обычно означает уже неактуальный event.
                 playback_state_.status = core::domain::playback_status::idle;
                 playback_state_.error_message.clear();
                 return;
@@ -588,6 +617,8 @@ private:
     }
 
     void fail_request_locked(const std::string& error_message) {
+        // Сбрасываем pending/current state одним местом, чтобы не оставить backend
+        // в вечном loading после ошибки загрузки или декодирования.
         pending_stream_url_.clear();
         current_stream_url_.clear();
         media_ready_ = false;

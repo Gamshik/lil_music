@@ -24,6 +24,8 @@ list_featured_tracks_use_case::list_featured_tracks_use_case(
     : track_catalog_(track_catalog) {}
 
 std::vector<domain::track> list_featured_tracks_use_case::execute(const int limit) const {
+    // Верхний слой может передать любой limit, но use case держит границы
+    // локально, чтобы API-адаптер всегда получал безопасный диапазон.
     return track_catalog_.get_featured_tracks(normalize_limit(limit));
 }
 

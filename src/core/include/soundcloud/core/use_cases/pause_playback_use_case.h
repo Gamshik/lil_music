@@ -10,6 +10,9 @@ namespace soundcloud::core::use_cases {
  */
 class pause_playback_use_case {
 public:
+    /**
+     * Создаёт use case поверх порта плеера, который умеет ставить playback на паузу.
+     */
     explicit pause_playback_use_case(ports::i_audio_player& audio_player);
 
     /**

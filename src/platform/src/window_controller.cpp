@@ -13,16 +13,22 @@ namespace soundcloud::platform {
 namespace {
 
 std::string to_file_url(const std::filesystem::path& file_path) {
+    // Приводим путь к абсолютному виду и к '/'-разделителям, чтобы URL был
+    // одинаково корректным на разных платформах.
     const std::string normalized_path = std::filesystem::absolute(file_path).generic_string();
 
     std::ostringstream encoded_path;
     encoded_path << "file://";
 
+    // Для Windows-путей вида C:/... нужен дополнительный '/' после scheme,
+    // чтобы получить валидный URL формата file:///C:/...
     if (!normalized_path.empty() && normalized_path.front() != '/') {
         encoded_path << '/';
     }
 
     for (const unsigned char character : normalized_path) {
+        // Оставляем безопасные для URL символы как есть, а всё остальное
+        // кодируем в %HH, чтобы пробелы и спецсимволы не ломали навигацию.
         if (std::isalnum(character) != 0 ||
             character == '/' ||
             character == '-' ||
@@ -50,6 +56,8 @@ std::string to_file_url(const std::filesystem::path& file_path) {
 std::string build_missing_asset_html(const std::filesystem::path& missing_file) {
     const std::string missing_file_path = missing_file.generic_string();
 
+    // Если UI-asset не найден, показываем локальную fallback-страницу,
+    // чтобы ошибка запуска была понятной и не выглядела как пустое окно.
     return
         "<!DOCTYPE html><html lang=\"ru\"><head><meta charset=\"utf-8\">"
         "<title>UI asset not found</title>"
@@ -81,17 +89,22 @@ void window_controller::run(
 #endif
 
     webview::webview window(is_debug_enabled, nullptr);
+    // Shell-уровень отвечает только за окно и публикацию JS bindings.
+    // Все бизнес-решения остаются за bridge.
     window.set_title(configuration.title);
     window.set_size(configuration.width, configuration.height, WEBVIEW_HINT_NONE);
 
     const std::vector<bridge::ui_binding> bindings = ui_bridge.get_bindings();
     for (const bridge::ui_binding& binding : bindings) {
+        // Регистрируем каждую JS-функцию как native callback.
         window.bind(binding.name, binding.handler);
     }
 
     if (std::filesystem::exists(configuration.entry_file_path)) {
+        // Нормальный путь запуска: открываем локальный UI entry point.
         window.navigate(to_file_url(configuration.entry_file_path));
     } else {
+        // Если assets отсутствуют, не оставляем пользователя с пустым окном.
         window.set_html(build_missing_asset_html(configuration.entry_file_path));
     }
 

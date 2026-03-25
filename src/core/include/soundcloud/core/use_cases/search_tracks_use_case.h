@@ -14,6 +14,9 @@ namespace soundcloud::core::use_cases {
  */
 class search_tracks_use_case {
 public:
+    /**
+     * Создаёт use case, который работает только через абстракцию каталога треков.
+     */
     explicit search_tracks_use_case(const ports::i_track_catalog& track_catalog);
 
     /**

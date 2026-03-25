@@ -6,6 +6,7 @@ pause_playback_use_case::pause_playback_use_case(ports::i_audio_player& audio_pl
     : audio_player_(audio_player) {}
 
 void pause_playback_use_case::execute() const {
+    // Пауза остаётся тонкой orchestration-операцией и не содержит собственной логики состояния.
     audio_player_.pause();
 }
 

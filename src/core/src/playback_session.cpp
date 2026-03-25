@@ -5,6 +5,8 @@
 namespace soundcloud::core::services {
 
 void playback_session::replace_active_listing(std::vector<domain::track> tracks) {
+    // Активный список отражает последнюю витрину или результат поиска.
+    // Он нужен, чтобы next/prev и lookup могли опираться на один и тот же набор треков.
     std::scoped_lock lock(state_mutex_);
     active_listing_ = std::move(tracks);
 }
@@ -15,6 +17,7 @@ bool playback_session::enqueue_track(const std::string& track_id) {
         return false;
     }
 
+    // Не дублируем трек в очереди, даже если пользователь нажал кнопку несколько раз.
     const auto queued_track_iterator = std::ranges::find(
         queued_tracks_,
         track_id,
@@ -46,6 +49,8 @@ void playback_session::mark_track_started(const std::string& track_id) {
         return;
     }
 
+    // Как только трек стартовал, фиксируем его как текущий playback listing.
+    // Это делает next/prev стабильными даже если пользователь ушёл на другой экран.
     update_playback_listing_locked(track_id);
     remove_from_queue_locked(track_id);
 
@@ -59,6 +64,7 @@ void playback_session::mark_track_started(const std::string& track_id) {
 std::optional<domain::track> playback_session::peek_next_track() const {
     std::scoped_lock lock(state_mutex_);
 
+    // Очередь всегда имеет приоритет над автоматическим переходом по списку.
     if (!queued_tracks_.empty()) {
         return queued_tracks_.front();
     }
@@ -88,6 +94,8 @@ std::optional<domain::track> playback_session::peek_previous_track() const {
         return std::nullopt;
     }
 
+    // Предыдущий трек берём из истории, а не из текущего экрана.
+    // Это позволяет корректно возвращаться назад даже после смены вкладки.
     return playback_history_[playback_history_.size() - 2];
 }
 
@@ -107,6 +115,7 @@ std::optional<domain::track> playback_session::find_known_track(const std::strin
 
 domain::playback_queue_state playback_session::get_queue_state() const {
     std::scoped_lock lock(state_mutex_);
+    // UI получает только компактный снимок состояния, а не все внутренние списки.
     return domain::playback_queue_state{
         .current_track_id = playback_history_.empty() ? std::string{} : playback_history_.back().id,
         .queued_tracks = queued_tracks_,
@@ -122,6 +131,7 @@ std::optional<domain::track> playback_session::find_known_track_locked(
     }
 
     auto find_track = [&track_id](const std::vector<domain::track>& tracks) -> std::optional<domain::track> {
+        // Ищем трек по всем локальным спискам в порядке их "свежести".
         const auto iterator = std::ranges::find(tracks, track_id, &domain::track::id);
         if (iterator == tracks.end()) {
             return std::nullopt;
@@ -169,6 +179,8 @@ bool playback_session::has_next_track_locked() const {
 }
 
 void playback_session::remove_from_queue_locked(const std::string& track_id) {
+    // Удаление делаем через erase_if, потому что queue хранится как обычный список треков,
+    // а не как отдельная структура с индексами.
     std::erase_if(queued_tracks_, [&track_id](const domain::track& track) {
         return track.id == track_id;
     });
@@ -179,6 +191,8 @@ void playback_session::update_playback_listing_locked(const std::string& track_i
         return;
     }
 
+    // Playback listing обновляем только если трек действительно пришёл из active listing.
+    // Это защищает navigation flow от чужих/устаревших идентификаторов.
     const auto active_track_iterator = std::ranges::find(
         active_listing_,
         track_id,

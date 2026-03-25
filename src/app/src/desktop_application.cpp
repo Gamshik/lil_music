@@ -18,6 +18,8 @@ namespace soundcloud::app {
 namespace {
 
 api::soundcloud_api_configuration build_soundcloud_api_configuration() {
+    // Конфигурация API вынесена отдельно, чтобы composition root было проще читать
+    // и чтобы host/client_id не размазывались по разным use case-ам.
     return api::soundcloud_api_configuration{
         .api_host = "api-v2.soundcloud.com",
         .client_id = "IvZsSdfTxP6ovYz9Nn4XGqmQVKs1vzbB",
@@ -41,6 +43,8 @@ desktop_application::desktop_application()
 
 int desktop_application::run() {
     try {
+        // Здесь происходит composition root в чистом виде:
+        // resolve runtime paths -> prepare window config -> run desktop shell.
         const platform::application_paths application_paths = application_paths_resolver_.resolve();
 
         const platform::window_configuration main_window_configuration{
@@ -50,8 +54,7 @@ int desktop_application::run() {
             .entry_file_path = application_paths.ui_entry_file,
         };
 
-        // Bridge и player уже собраны в composition root и будут подключены к UI
-        // по мере появления JS API и playback-сценариев.
+        // Player создан как часть графа зависимостей выше и остаётся живым на всё время процесса.
         (void)audio_player_;
 
         window_controller_.run(main_window_configuration, bridge_);

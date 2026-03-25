@@ -9,6 +9,8 @@
 namespace soundcloud::bridge {
 namespace {
 
+// Преобразует доменный enum в строковый контракт для JS-слоя.
+// Bridge не должен отдавать наружу C++-типы, поэтому здесь сразу делаем нормализацию.
 std::string to_string(const core::domain::playback_status status) {
     switch (status) {
         case core::domain::playback_status::idle:
@@ -33,6 +35,8 @@ std::string build_error_response(const std::string& message) {
 }
 
 std::string build_loading_response(const std::string& track_id, const std::string& track_title) {
+    // Специальный ответ для быстрых переключений track -> loading.
+    // UI понимает, что операция ещё не завершилась, а не пытается интерпретировать это как ошибку.
     std::ostringstream response;
     response << R"({"ok":true,"state":"loading","trackId":)"
              << bridge_json_codec::escape_string(track_id)
@@ -42,6 +46,8 @@ std::string build_loading_response(const std::string& track_id, const std::strin
 }
 
 std::string serialize_track(const core::domain::track& track) {
+    // Сериализуем только те поля, которые реально нужны web-слою:
+    // id для действий, title/artist/artwork для рендера и streamUrl для отладки/diagnostics.
     std::ostringstream serialized_track;
     serialized_track << '{'
                      << R"("id":)" << bridge_json_codec::escape_string(track.id) << ','
@@ -58,6 +64,8 @@ std::string serialize_track(const core::domain::track& track) {
 std::string serialize_queue_state(
     const core::domain::playback_queue_state& queue_state,
     const std::optional<core::domain::track>& current_track) {
+    // Возвращаем UI уже готовый снимок очереди.
+    // Это защищает web-слой от знания внутренних деталей playback_session.
     std::ostringstream response;
     response << R"({"ok":true,"currentTrackId":)"
              << bridge_json_codec::escape_string(queue_state.current_track_id)
@@ -100,6 +108,8 @@ app_bridge::app_bridge(
       toggle_favorite_use_case_(std::move(toggle_favorite_use_case)) {}
 
 std::vector<ui_binding> app_bridge::get_bindings() const {
+    // Этот список и есть публичный JS API приложения.
+    // Platform слой только публикует его в webview, но не знает ничего о core use case-ах.
     return {
         ui_binding{
             .name = "getAppInfo",
@@ -175,11 +185,14 @@ std::vector<ui_binding> app_bridge::get_bindings() const {
 }
 
 std::string app_bridge::build_app_info_response() const {
+    // Лёгкий handshake для UI: подтверждаем, что bridge жив и какой playback backend активен.
     return R"({"ok":true,"applicationName":"LilMusic","bridgeStatus":"connected","playbackBackend":"Media Foundation"})";
 }
 
 std::string app_bridge::build_get_playback_state_response() const {
     try {
+        // Собираем один snapshot из двух источников:
+        // native playback state и session-state очереди/истории.
         const core::domain::playback_state playback_state = get_playback_state_use_case_.execute();
         const core::domain::playback_queue_state queue_state = playback_session_.get_queue_state();
         const std::optional<core::domain::track> current_track =
@@ -209,6 +222,7 @@ std::string app_bridge::build_get_playback_state_response() const {
 
 std::string app_bridge::build_get_queue_state_response() const {
     try {
+        // Отдельный endpoint для UI, который хочет перерисовать только очередь.
         const core::domain::playback_queue_state queue_state = playback_session_.get_queue_state();
         const std::optional<core::domain::track> current_track =
             playback_session_.find_known_track(queue_state.current_track_id);
@@ -220,6 +234,8 @@ std::string app_bridge::build_get_queue_state_response() const {
 
 std::string app_bridge::build_get_featured_tracks_response(const std::string& request_json) const {
     try {
+        // Главная лента обновляет active listing в playback_session,
+        // чтобы next/prev потом опирались на тот же набор треков.
         const int limit =
             bridge_json_codec::read_integer_field_from_first_argument(request_json, "limit")
                 .value_or(12);
@@ -246,6 +262,8 @@ std::string app_bridge::build_get_featured_tracks_response(const std::string& re
 }
 
 std::string app_bridge::build_enqueue_track_response(const std::string& request_json) const {
+    // Очередь работает только по trackId: UI уже видит нужный трек,
+    // а business rules добавления в queue живут в core playback_session.
     const std::string track_id = bridge_json_codec::read_string_field_from_first_argument(
                                      request_json,
                                      "trackId")
@@ -270,6 +288,7 @@ std::string app_bridge::build_enqueue_track_response(const std::string& request_
 }
 
 std::string app_bridge::build_remove_queued_track_response(const std::string& request_json) const {
+    // Удаление из очереди тоже идёт через session-state, чтобы web-слой не держал own source of truth.
     const std::string track_id = bridge_json_codec::read_string_field_from_first_argument(
                                      request_json,
                                      "trackId")
@@ -295,6 +314,8 @@ std::string app_bridge::build_remove_queued_track_response(const std::string& re
 
 std::string app_bridge::build_play_track_response(const std::string& request_json) const {
     try {
+        // Запуск трека идёт через единый orchestration-flow:
+        // UI передаёт id, bridge подтягивает title и вызывает use case.
         const std::string track_id = bridge_json_codec::read_string_field_from_first_argument(
                                          request_json,
                                          "trackId")
@@ -328,6 +349,8 @@ std::string app_bridge::build_play_track_response(const std::string& request_jso
 
 std::string app_bridge::build_play_previous_track_response() const {
     try {
+        // Prev зависит не от текущей вкладки, а от native playback history.
+        // Это позволяет переключать треки даже при уходе с экрана поиска.
         const std::optional<core::domain::track> previous_track = playback_session_.peek_previous_track();
         if (!previous_track.has_value()) {
             return build_error_response("Предыдущий трек недоступен.");
@@ -354,6 +377,7 @@ std::string app_bridge::build_play_previous_track_response() const {
 
 std::string app_bridge::build_play_next_track_response() const {
     try {
+        // Next сначала берёт трек из queue, а если queue пустая — идёт по playback-list.
         const std::optional<core::domain::track> next_track = playback_session_.peek_next_track();
         if (!next_track.has_value()) {
             return build_error_response("Следующий трек недоступен.");
@@ -379,6 +403,7 @@ std::string app_bridge::build_play_next_track_response() const {
 
 std::string app_bridge::build_pause_playback_response() const {
     try {
+        // Пауза напрямую управляет player, не меняя queue/history state.
         pause_playback_use_case_.execute();
         return R"({"ok":true,"state":"paused"})";
     } catch (const std::exception& exception) {
@@ -388,6 +413,7 @@ std::string app_bridge::build_pause_playback_response() const {
 
 std::string app_bridge::build_resume_playback_response() const {
     try {
+        // Resume возвращает UI ещё и текущий title, чтобы экран не терял контекст трека.
         resume_playback_use_case_.execute();
         const core::domain::playback_queue_state queue_state = playback_session_.get_queue_state();
         const std::optional<core::domain::track> current_track =
@@ -404,6 +430,7 @@ std::string app_bridge::build_resume_playback_response() const {
 
 std::string app_bridge::build_seek_playback_response(const std::string& request_json) const {
     try {
+        // Seek работает по позиции в миллисекундах, а UI сам вычисляет target из progress bar.
         const int position_ms =
             bridge_json_codec::read_integer_field_from_first_argument(request_json, "positionMs")
                 .value_or(0);
@@ -423,6 +450,8 @@ std::string app_bridge::build_seek_playback_response(const std::string& request_
 
 std::string app_bridge::build_search_tracks_response(const std::string& request_json) const {
     try {
+        // Search flow живёт в core/api, а bridge только нормализует входные параметры
+        // и отдаёт UI уже готовый список треков.
         const core::domain::track_search_request request{
             .query = bridge_json_codec::read_string_field_from_first_argument(request_json, "query")
                          .value_or(""),
@@ -459,6 +488,7 @@ std::string app_bridge::build_search_tracks_response(const std::string& request_
 }
 
 std::string app_bridge::build_toggle_favorite_response(const std::string& request_json) const {
+    // Favorites - локальная функция приложения, не связанная с аккаунтом SoundCloud.
     const std::string track_id = bridge_json_codec::read_string_field_from_first_argument(
                                      request_json,
                                      "trackId")
