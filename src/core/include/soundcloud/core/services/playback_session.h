@@ -65,16 +65,57 @@ public:
     [[nodiscard]] domain::playback_queue_state get_queue_state() const;
 
 private:
+    /**
+     * Внутренний lookup по всем локальным спискам session-state.
+     * Суффикс `_locked` означает, что mutex уже должен быть захвачен снаружи.
+     */
     [[nodiscard]] std::optional<domain::track> find_known_track_locked(
         const std::string& track_id) const;
+
+    /**
+     * Проверяет доступность следующего трека в текущем navigation flow.
+     * Сначала учитывает очередь, затем fallback на playback listing.
+     */
     [[nodiscard]] bool has_next_track_locked() const;
+
+    /**
+     * Удаляет трек из очереди без повторного захвата mutex.
+     */
     void remove_from_queue_locked(const std::string& track_id);
+
+    /**
+     * Фиксирует playback listing в момент старта трека.
+     * Это отделяет "что пользователь сейчас видит" от "по какому списку идёт playback".
+     */
     void update_playback_listing_locked(const std::string& track_id);
 
+    /**
+     * Защищает всё mutable session-state сервиса:
+     * active listing, playback listing, очередь и историю.
+     */
     mutable std::mutex state_mutex_;
+
+    /**
+     * Последний список треков, пришедший из UI.
+     * Обычно это результаты поиска или стартовая витрина, которую пользователь видит сейчас.
+     */
     std::vector<domain::track> active_listing_;
+
+    /**
+     * Список, по которому продолжается текущее воспроизведение.
+     * Фиксируется в момент старта трека, чтобы Next/Prev не ломались после смены экрана.
+     */
     std::vector<domain::track> playback_listing_;
+
+    /**
+     * Явная пользовательская очередь с наивысшим приоритетом перед auto-next.
+     */
     std::vector<domain::track> queued_tracks_;
+
+    /**
+     * История уже реально стартовавших треков.
+     * Используется для current track и navigation назад через Prev.
+     */
     std::vector<domain::track> playback_history_;
 };
 

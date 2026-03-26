@@ -176,12 +176,15 @@ public:
         : owner_(owner) {}
 
     ULONG STDMETHODCALLTYPE AddRef() override {
+        // Media Foundation работает через COM, поэтому callback обязан
+        // поддерживать стандартный reference counting жизненного цикла.
         return ++reference_count_;
     }
 
     ULONG STDMETHODCALLTYPE Release() override {
         const ULONG reference_count = --reference_count_;
         if (reference_count == 0) {
+            // Когда последняя COM-ссылка исчезает, callback освобождает себя сам.
             delete this;
         }
 
@@ -194,6 +197,7 @@ public:
         }
 
         if (iid == __uuidof(IUnknown) || iid == __uuidof(IMFPMediaPlayerCallback)) {
+            // Объявляем Media Foundation, что объект поддерживает именно эти COM-интерфейсы.
             *object = static_cast<IMFPMediaPlayerCallback*>(this);
             AddRef();
             return S_OK;
@@ -236,6 +240,8 @@ public:
             callback_,
             nullptr,
             media_player_.put());
+        // Здесь создаётся сам MFPlay transport и сразу привязывается callback,
+        // через который backend будет получать все асинхронные события плеера.
         throw_if_failed(create_player_result, "Создание Media Foundation player");
     }
 
@@ -279,6 +285,9 @@ public:
         playback_state_.position_ms = 0;
         playback_state_.duration_ms = 0;
 
+        // CreateMediaItemFromURL не завершает подготовку source сразу синхронно.
+        // Он запускает асинхронный путь, который позже даст MEDIAITEM_CREATED,
+        // а затем MEDIAITEM_SET через callback.
         const HRESULT create_item_result = media_player_.get()->CreateMediaItemFromURL(
             wide_stream_url.c_str(),
             FALSE,
@@ -390,29 +399,49 @@ public:
             // маршрутизация по типу события, а состояние обновляется в helper-ах ниже.
             switch (event_header->eEventType) {
                 case MFP_EVENT_TYPE_MEDIAITEM_CREATED:
+                    // Первый шаг асинхронного load(): Media Foundation сообщает,
+                    // что URL уже превращён в IMFPMediaItem. Здесь мы ещё не играем,
+                    // а только проверяем request token и просим player принять этот item.
                     handle_media_item_created(
                         reinterpret_cast<MFP_MEDIAITEM_CREATED_EVENT*>(event_header));
                     break;
                 case MFP_EVENT_TYPE_MEDIAITEM_SET:
+                    // Второй шаг load(): player подтвердил, что новый media item
+                    // стал текущим. После этого pending request считается завершённым,
+                    // и backend может перевести source из pending_* в current_*.
                     handle_media_item_set(
                         reinterpret_cast<MFP_MEDIAITEM_SET_EVENT*>(event_header));
                     break;
                 case MFP_EVENT_TYPE_PLAY:
+                    // Native transport реально перешёл в состояние воспроизведения.
+                    // Это самый надёжный сигнал для UI, что звук уже должен идти.
                     update_status(core::domain::playback_status::playing);
                     break;
                 case MFP_EVENT_TYPE_PAUSE:
+                    // Player приостановил текущий source, но не сбросил сам media item.
+                    // Поэтому мы сохраняем текущий трек и позволяем resume() продолжить его.
                     update_status(core::domain::playback_status::paused);
                     break;
                 case MFP_EVENT_TYPE_STOP:
+                    // Stop в MFPlay означает остановку транспорта и возврат в idle.
+                    // Это не ошибка: source может остаться известным, но playback больше не идёт.
                     update_status(core::domain::playback_status::idle);
                     break;
                 case MFP_EVENT_TYPE_PLAYBACK_ENDED:
+                    // Трек доиграл до конца естественным образом. Здесь backend не просто
+                    // ставит idle, а ещё помечает completion token, чтобы UI/session
+                    // могли запустить auto-next без эвристик по position/duration.
                     handle_playback_ended();
                     break;
                 case MFP_EVENT_TYPE_ERROR:
+                    // Media Foundation прислал системную ошибку по текущему playback flow.
+                    // Поднимаем её как exception, а общий catch ниже переведёт backend
+                    // в доменное состояние error и очистит pending request.
                     throw_if_failed(event_header->hrEvent, "Playback event");
                     break;
                 default:
+                    // Остальные события для текущего UX не несут отдельной доменной
+                    // семантики, поэтому backend их сознательно игнорирует.
                     break;
             }
         } catch (const std::exception& exception) {
@@ -427,6 +456,8 @@ private:
             return;
         }
 
+        // dwUserData — это тот самый request token, который мы передали при load().
+        // Он позволяет понять, какому конкретно CreateMediaItemFromURL принадлежит это событие.
         const std::uint64_t request_token = static_cast<std::uint64_t>(event_data->dwUserData);
         bool is_expected_request = false;
         {
@@ -440,6 +471,8 @@ private:
         }
 
         throw_if_failed(event_data->header.hrEvent, "Создание media item");
+        // После создания source ещё не становится активным автоматически.
+        // Отдельным шагом устанавливаем item в player, и это вызовет MEDIAITEM_SET.
         throw_if_failed(
             media_player_.get()->SetMediaItem(event_data->pMediaItem),
             "Установка media item в player");
@@ -468,6 +501,7 @@ private:
         bool should_play = false;
         {
             std::scoped_lock lock(state_mutex_);
+            // В этот момент pending source становится текущим рабочим source backend-а.
             current_stream_url_ = pending_stream_url_;
             pending_stream_url_.clear();
             active_request_token_ =
@@ -509,6 +543,7 @@ private:
     }
 
     [[nodiscard]] bool is_request_pending_locked() const {
+        // Pending request — это именно состояние между load() и готовностью media item.
         return !pending_stream_url_.empty() && !media_item_ready_;
     }
 
@@ -551,6 +586,7 @@ private:
 
         // Здесь мы сводим native MFP state к нашему доменному enum,
         // чтобы bridge/UI вообще не знали о существовании Windows-specific статусов.
+        // Это и есть адаптационная граница между WinAPI и domain state приложения.
         switch (native_state) {
             case MFP_MEDIAPLAYER_STATE_PLAYING:
                 return core::domain::playback_status::playing;
@@ -609,15 +645,22 @@ private:
     }
 
     mutable std::mutex state_mutex_;
+    // Этот mutex защищает весь mutable playback snapshot и request lifecycle.
     com_ptr<IMFPMediaPlayer> media_player_;
+    // callback_ — мост от асинхронных MFPlay событий обратно в наш backend.
     media_player_callback* callback_ = nullptr;
+    // pending/current URL разделены, чтобы можно было корректно переживать
+    // период между запросом нового трека и фактической готовностью media item.
     std::string pending_stream_url_;
     std::string current_stream_url_;
     std::string last_error_message_;
+    // Request token-ы нужны для фильтрации delayed event-ов от старых load() запросов.
     std::uint64_t pending_request_token_ = 0;
     std::uint64_t active_request_token_ = 0;
     std::uint64_t last_request_token_ = 0;
+    // playback_state_ — доменный snapshot, который читает bridge и UI.
     core::domain::playback_state playback_state_{};
+    // Эти флаги описывают жизненный цикл текущего source и системных ресурсов backend-а.
     bool should_start_playback_when_ready_ = false;
     bool media_item_ready_ = false;
     bool should_uninitialize_com_ = false;
