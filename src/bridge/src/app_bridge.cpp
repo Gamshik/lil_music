@@ -135,6 +135,29 @@ std::string serialize_equalizer_state(const core::domain::equalizer_state& equal
     return response.str();
 }
 
+std::string serialize_audio_output_devices(
+    const std::vector<core::domain::audio_output_device>& devices) {
+    std::ostringstream response;
+    response << R"({"ok":true,"devices":[)";
+
+    for (std::size_t index = 0; index < devices.size(); ++index) {
+        if (index != 0) {
+            response << ',';
+        }
+
+        const core::domain::audio_output_device& device = devices[index];
+        response << '{'
+                 << R"("id":)" << bridge_json_codec::escape_string(device.id) << ','
+                 << R"("displayName":)" << bridge_json_codec::escape_string(device.display_name)
+                 << R"(,"isDefault":)" << (device.is_default ? "true" : "false")
+                 << R"(,"isSelected":)" << (device.is_selected ? "true" : "false")
+                 << '}';
+    }
+
+    response << "]}";
+    return response.str();
+}
+
 std::string serialize_queue_state(
     const core::domain::playback_queue_state& queue_state,
     const std::optional<core::domain::track>& current_track) {
@@ -168,11 +191,13 @@ std::string serialize_queue_state(
 app_bridge::app_bridge(
     core::use_cases::get_equalizer_state_use_case get_equalizer_state_use_case,
     core::use_cases::get_playback_state_use_case get_playback_state_use_case,
+    core::use_cases::list_audio_output_devices_use_case list_audio_output_devices_use_case,
     core::use_cases::list_featured_tracks_use_case list_featured_tracks_use_case,
     core::use_cases::play_track_use_case play_track_use_case,
     core::use_cases::pause_playback_use_case pause_playback_use_case,
     core::use_cases::resume_playback_use_case resume_playback_use_case,
     core::use_cases::seek_playback_use_case seek_playback_use_case,
+    core::use_cases::select_audio_output_device_use_case select_audio_output_device_use_case,
     core::use_cases::set_playback_volume_use_case set_playback_volume_use_case,
     core::use_cases::set_equalizer_enabled_use_case set_equalizer_enabled_use_case,
     core::use_cases::select_equalizer_preset_use_case select_equalizer_preset_use_case,
@@ -183,11 +208,13 @@ app_bridge::app_bridge(
     core::use_cases::toggle_favorite_use_case toggle_favorite_use_case)
     : get_equalizer_state_use_case_(std::move(get_equalizer_state_use_case)),
       get_playback_state_use_case_(std::move(get_playback_state_use_case)),
+      list_audio_output_devices_use_case_(std::move(list_audio_output_devices_use_case)),
       list_featured_tracks_use_case_(std::move(list_featured_tracks_use_case)),
       play_track_use_case_(std::move(play_track_use_case)),
       pause_playback_use_case_(std::move(pause_playback_use_case)),
       resume_playback_use_case_(std::move(resume_playback_use_case)),
       seek_playback_use_case_(std::move(seek_playback_use_case)),
+      select_audio_output_device_use_case_(std::move(select_audio_output_device_use_case)),
       set_playback_volume_use_case_(std::move(set_playback_volume_use_case)),
       set_equalizer_enabled_use_case_(std::move(set_equalizer_enabled_use_case)),
       select_equalizer_preset_use_case_(std::move(select_equalizer_preset_use_case)),
@@ -212,6 +239,10 @@ std::vector<ui_binding> app_bridge::get_bindings() const {
         ui_binding{
             .name = "getPlaybackState",
             .handler = [this](const std::string&) { return build_get_playback_state_response(); },
+        },
+        ui_binding{
+            .name = "getAudioOutputDevices",
+            .handler = [this](const std::string&) { return build_get_audio_output_devices_response(); },
         },
         ui_binding{
             .name = "getQueueState",
@@ -273,6 +304,12 @@ std::vector<ui_binding> app_bridge::get_bindings() const {
             .name = "seekPlayback",
             .handler = [this](const std::string& request_json) {
                 return build_seek_playback_response(request_json);
+            },
+        },
+        ui_binding{
+            .name = "selectAudioOutputDevice",
+            .handler = [this](const std::string& request_json) {
+                return build_select_audio_output_device_response(request_json);
             },
         },
         ui_binding{
@@ -366,6 +403,14 @@ std::string app_bridge::build_get_playback_state_response() const {
                  << R"(,"canPlayNext":)" << (queue_state.can_play_next ? "true" : "false")
                  << '}';
         return response.str();
+    } catch (const std::exception& exception) {
+        return build_error_response(exception.what());
+    }
+}
+
+std::string app_bridge::build_get_audio_output_devices_response() const {
+    try {
+        return serialize_audio_output_devices(list_audio_output_devices_use_case_.execute());
     } catch (const std::exception& exception) {
         return build_error_response(exception.what());
     }
@@ -653,6 +698,20 @@ std::string app_bridge::build_seek_playback_response(const std::string& request_
                         playback_session_.get_queue_state().current_track_id)
                  << '}';
         return response.str();
+    } catch (const std::exception& exception) {
+        return build_error_response(exception.what());
+    }
+}
+
+std::string app_bridge::build_select_audio_output_device_response(
+    const std::string& request_json) const {
+    try {
+        const std::string device_id = bridge_json_codec::read_string_field_from_first_argument(
+                                          request_json,
+                                          "deviceId")
+                                          .value_or("");
+        select_audio_output_device_use_case_.execute(device_id);
+        return serialize_audio_output_devices(list_audio_output_devices_use_case_.execute());
     } catch (const std::exception& exception) {
         return build_error_response(exception.what());
     }

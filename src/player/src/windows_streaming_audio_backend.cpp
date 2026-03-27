@@ -44,6 +44,7 @@
 namespace soundcloud::player {
 namespace {
 
+using soundcloud::core::domain::audio_output_device;
 using soundcloud::core::domain::equalizer_band;
 using soundcloud::core::domain::equalizer_preset;
 using soundcloud::core::domain::equalizer_preset_id;
@@ -51,6 +52,11 @@ using soundcloud::core::domain::equalizer_state;
 using soundcloud::core::domain::equalizer_status;
 using soundcloud::core::domain::playback_state;
 using soundcloud::core::domain::playback_status;
+
+constexpr PROPERTYKEY kDeviceFriendlyNamePropertyKey{
+    {0xa45c254e, 0xdf1c, 0x4efd, {0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0}},
+    14,
+};
 
 // TODO: может вынести в отдельный модуль, по тиму common
 template <typename interface_type>
@@ -104,6 +110,33 @@ public:
 private:
     // Владение конкретным COM interface instance.
     interface_type* value_ = nullptr;
+};
+
+class scoped_com_runtime {
+public:
+    scoped_com_runtime() {
+        const HRESULT result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        should_uninitialize_ = SUCCEEDED(result);
+        if (FAILED(result) && result != RPC_E_CHANGED_MODE) {
+            std::ostringstream message;
+            message << "Инициализация COM для работы с audio devices завершилась ошибкой HRESULT 0x"
+                    << std::hex << static_cast<unsigned long>(result) << std::dec << ": "
+                    << std::system_category().message(result);
+            throw std::runtime_error(message.str());
+        }
+    }
+
+    scoped_com_runtime(const scoped_com_runtime&) = delete;
+    scoped_com_runtime& operator=(const scoped_com_runtime&) = delete;
+
+    ~scoped_com_runtime() {
+        if (should_uninitialize_) {
+            CoUninitialize();
+        }
+    }
+
+private:
+    bool should_uninitialize_ = false;
 };
 
 struct cotaskmem_deleter {
@@ -209,6 +242,41 @@ std::wstring utf8_to_utf16(const std::string& value) {
     }
 
     return wide_value;
+}
+
+std::string utf16_to_utf8(const std::wstring_view value) {
+    if (value.empty()) {
+        return {};
+    }
+
+    const int utf8_size = WideCharToMultiByte(
+        CP_UTF8,
+        WC_ERR_INVALID_CHARS,
+        value.data(),
+        static_cast<int>(value.size()),
+        nullptr,
+        0,
+        nullptr,
+        nullptr);
+    if (utf8_size <= 0) {
+        throw std::runtime_error("Не удалось преобразовать UTF-16 строку в UTF-8.");
+    }
+
+    std::string utf8_value(static_cast<std::size_t>(utf8_size), '\0');
+    const int converted_size = WideCharToMultiByte(
+        CP_UTF8,
+        WC_ERR_INVALID_CHARS,
+        value.data(),
+        static_cast<int>(value.size()),
+        utf8_value.data(),
+        utf8_size,
+        nullptr,
+        nullptr);
+    if (converted_size != utf8_size) {
+        throw std::runtime_error("Не удалось преобразовать UTF-16 строку в UTF-8.");
+    }
+
+    return utf8_value;
 }
 
 std::int64_t convert_100ns_to_milliseconds(const std::int64_t value_100ns) {
@@ -426,6 +494,136 @@ bool band_gains_match(
     return true;
 }
 
+com_ptr<IMMDeviceEnumerator> create_device_enumerator() {
+    com_ptr<IMMDeviceEnumerator> device_enumerator;
+    throw_if_failed(
+        CoCreateInstance(
+            __uuidof(MMDeviceEnumerator),
+            nullptr,
+            CLSCTX_ALL,
+            __uuidof(IMMDeviceEnumerator),
+            reinterpret_cast<void**>(device_enumerator.put())),
+        "Создание MMDeviceEnumerator");
+    return device_enumerator;
+}
+
+std::string extract_device_id(IMMDevice* device) {
+    LPWSTR wide_device_id = nullptr;
+    throw_if_failed(device->GetId(&wide_device_id), "Получение идентификатора audio device");
+
+    const std::wstring_view wide_id(wide_device_id != nullptr ? wide_device_id : L"");
+    const std::string device_id = utf16_to_utf8(wide_id);
+    if (wide_device_id != nullptr) {
+        CoTaskMemFree(wide_device_id);
+    }
+
+    return device_id;
+}
+
+std::string extract_device_friendly_name(IMMDevice* device) {
+    com_ptr<IPropertyStore> property_store;
+    throw_if_failed(
+        device->OpenPropertyStore(STGM_READ, property_store.put()),
+        "Открытие property store audio device");
+
+    PROPVARIANT friendly_name_value;
+    PropVariantInit(&friendly_name_value);
+    throw_if_failed(
+        property_store.get()->GetValue(kDeviceFriendlyNamePropertyKey, &friendly_name_value),
+        "Получение friendly name audio device");
+
+    std::string friendly_name;
+    if (friendly_name_value.vt == VT_LPWSTR && friendly_name_value.pwszVal != nullptr) {
+        friendly_name = utf16_to_utf8(friendly_name_value.pwszVal);
+    }
+    PropVariantClear(&friendly_name_value);
+    return friendly_name;
+}
+
+std::string query_default_render_device_id(IMMDeviceEnumerator* device_enumerator) {
+    com_ptr<IMMDevice> default_device;
+    throw_if_failed(
+        device_enumerator->GetDefaultAudioEndpoint(eRender, eMultimedia, default_device.put()),
+        "Получение default render device");
+    return extract_device_id(default_device.get());
+}
+
+std::vector<audio_output_device> enumerate_render_devices(const std::string& preferred_device_id) {
+    scoped_com_runtime com_runtime;
+    const com_ptr<IMMDeviceEnumerator> device_enumerator = create_device_enumerator();
+
+    com_ptr<IMMDeviceCollection> device_collection;
+    throw_if_failed(
+        device_enumerator.get()->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, device_collection.put()),
+        "Перечисление активных output devices");
+
+    UINT device_count = 0;
+    throw_if_failed(
+        device_collection.get()->GetCount(&device_count),
+        "Получение количества output devices");
+
+    const std::string default_device_id = query_default_render_device_id(device_enumerator.get());
+    bool preferred_device_present = false;
+    std::vector<audio_output_device> devices;
+    devices.reserve(device_count);
+
+    for (UINT device_index = 0; device_index < device_count; ++device_index) {
+        com_ptr<IMMDevice> device;
+        throw_if_failed(
+            device_collection.get()->Item(device_index, device.put()),
+            "Получение output device из коллекции");
+
+        const std::string device_id = extract_device_id(device.get());
+        const bool is_default = device_id == default_device_id;
+        preferred_device_present = preferred_device_present || device_id == preferred_device_id;
+
+        devices.push_back(audio_output_device{
+            .id = device_id,
+            .display_name = extract_device_friendly_name(device.get()),
+            .is_default = is_default,
+            .is_selected = false,
+        });
+    }
+
+    const std::string selected_device_id =
+        !preferred_device_id.empty() && preferred_device_present ? preferred_device_id : default_device_id;
+    for (audio_output_device& device : devices) {
+        device.is_selected = device.id == selected_device_id;
+    }
+
+    return devices;
+}
+
+com_ptr<IMMDevice> resolve_render_device(
+    IMMDeviceEnumerator* device_enumerator,
+    const std::string& preferred_device_id,
+    std::string& resolved_device_id,
+    std::string& resolved_device_name,
+    bool& resolved_is_default) {
+    com_ptr<IMMDevice> render_device;
+
+    if (!preferred_device_id.empty()) {
+        const std::wstring preferred_device_id_wide = utf8_to_utf16(preferred_device_id);
+        const HRESULT selected_device_result =
+            device_enumerator->GetDevice(preferred_device_id_wide.c_str(), render_device.put());
+        if (SUCCEEDED(selected_device_result)) {
+            resolved_device_id = preferred_device_id;
+        }
+    }
+
+    if (render_device.get() == nullptr) {
+        throw_if_failed(
+            device_enumerator->GetDefaultAudioEndpoint(eRender, eMultimedia, render_device.put()),
+            "Получение default render device");
+        resolved_device_id = extract_device_id(render_device.get());
+    }
+
+    const std::string default_device_id = query_default_render_device_id(device_enumerator);
+    resolved_is_default = resolved_device_id == default_device_id;
+    resolved_device_name = extract_device_friendly_name(render_device.get());
+    return render_device;
+}
+
 }  // namespace
 
 class windows_streaming_audio_backend::implementation {
@@ -532,6 +730,35 @@ public:
     void set_volume_percent(const int volume_percent) {
         std::scoped_lock lock(state_mutex_);
         playback_state_.volume_percent = (std::clamp)(volume_percent, 0, 100);
+        command_condition_variable_.notify_all();
+    }
+
+    [[nodiscard]] std::vector<audio_output_device> list_audio_output_devices() const {
+        std::string preferred_device_id;
+        {
+            std::scoped_lock lock(state_mutex_);
+            preferred_device_id = preferred_output_device_id_;
+        }
+
+        return enumerate_render_devices(preferred_device_id);
+    }
+
+    void select_audio_output_device(const std::string& device_id) {
+        std::scoped_lock lock(state_mutex_);
+        preferred_output_device_id_ = device_id;
+        device_reinitialization_requested_ = true;
+
+        const std::string stream_url_to_reload =
+            !current_stream_url_.empty() ? current_stream_url_ : requested_stream_url_;
+        if (!stream_url_to_reload.empty()) {
+            requested_stream_url_ = stream_url_to_reload;
+            ++requested_source_generation_;
+            pending_seek_ms_ = playback_state_.position_ms;
+            source_ready_ = false;
+            playback_state_.status = playback_status::loading;
+            playback_state_.error_message.clear();
+        }
+
         command_condition_variable_.notify_all();
     }
 
@@ -733,22 +960,30 @@ private:
 
     void initialize_audio_path(worker_context& context) {
         // Поднимаем shared WASAPI render path под default output device и конфигурируем EQ chain.
+        if (context.audio_client_started && context.audio_client.get() != nullptr) {
+            context.audio_client.get()->Stop();
+            context.audio_client_started = false;
+        }
         context.render_client.reset();
         context.audio_client.reset();
         context.render_device.reset();
 
-        com_ptr<IMMDeviceEnumerator> device_enumerator;
-        throw_if_failed(
-            CoCreateInstance(
-                __uuidof(MMDeviceEnumerator),
-                nullptr,
-                CLSCTX_ALL,
-                __uuidof(IMMDeviceEnumerator),
-                reinterpret_cast<void**>(device_enumerator.put())),
-            "Создание MMDeviceEnumerator");
-        throw_if_failed(
-            device_enumerator.get()->GetDefaultAudioEndpoint(eRender, eMultimedia, context.render_device.put()),
-            "Получение default render device");
+        const com_ptr<IMMDeviceEnumerator> device_enumerator = create_device_enumerator();
+        std::string preferred_output_device_id;
+        {
+            std::scoped_lock lock(state_mutex_);
+            preferred_output_device_id = preferred_output_device_id_;
+        }
+
+        std::string resolved_device_id;
+        std::string resolved_device_name;
+        bool resolved_is_default = false;
+        context.render_device = resolve_render_device(
+            device_enumerator.get(),
+            preferred_output_device_id,
+            resolved_device_id,
+            resolved_device_name,
+            resolved_is_default);
         throw_if_failed(
             context.render_device.get()->Activate(
                 __uuidof(IAudioClient),
@@ -787,6 +1022,9 @@ private:
 
         {
             std::scoped_lock lock(state_mutex_);
+            preferred_output_device_id_ = resolved_is_default ? "" : resolved_device_id;
+            active_output_device_id_ = resolved_device_id;
+            active_output_device_name_ = resolved_device_name;
             apply_equalizer_targets_to_chain_locked(context.equalizer_chain);
             equalizer_state_.status = equalizer_status::ready;
             equalizer_state_.error_message.clear();
@@ -1078,6 +1316,8 @@ private:
         // но не теряем domain snapshot настроек.
         std::scoped_lock lock(state_mutex_);
         source_ready_ = false;
+        active_output_device_id_.clear();
+        active_output_device_name_.clear();
         device_reinitialization_requested_ = true;
         playback_state_.status = playback_status::loading;
         equalizer_state_.status = equalizer_status::audio_engine_unavailable;
@@ -1201,6 +1441,12 @@ private:
     std::string requested_stream_url_;
     // URL реально активного источника playback.
     std::string current_stream_url_;
+    // Предпочтительный endpoint. Пустой id означает system default.
+    std::string preferred_output_device_id_;
+    // Фактически активный endpoint внутри текущего WASAPI path.
+    std::string active_output_device_id_;
+    // Человекочитаемое имя текущего output device.
+    std::string active_output_device_name_;
     // Domain snapshot transport/playback state.
     playback_state playback_state_{};
     // Domain snapshot equalizer state.
@@ -1238,6 +1484,15 @@ void windows_streaming_audio_backend::seek_to(const std::int64_t position_ms) {
 
 void windows_streaming_audio_backend::set_volume_percent(const int volume_percent) {
     implementation_->set_volume_percent(volume_percent);
+}
+
+std::vector<core::domain::audio_output_device>
+windows_streaming_audio_backend::list_audio_output_devices() const {
+    return implementation_->list_audio_output_devices();
+}
+
+void windows_streaming_audio_backend::select_audio_output_device(const std::string& device_id) {
+    implementation_->select_audio_output_device(device_id);
 }
 
 void windows_streaming_audio_backend::set_equalizer_enabled(const bool enabled) {

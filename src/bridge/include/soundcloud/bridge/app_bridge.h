@@ -6,12 +6,14 @@
 #include "soundcloud/core/services/playback_session.h"
 #include "soundcloud/core/use_cases/get_equalizer_state_use_case.h"
 #include "soundcloud/core/use_cases/get_playback_state_use_case.h"
+#include "soundcloud/core/use_cases/list_audio_output_devices_use_case.h"
 #include "soundcloud/core/use_cases/list_featured_tracks_use_case.h"
 #include "soundcloud/core/use_cases/pause_playback_use_case.h"
 #include "soundcloud/core/use_cases/play_track_use_case.h"
 #include "soundcloud/core/use_cases/reset_equalizer_use_case.h"
 #include "soundcloud/core/use_cases/resume_playback_use_case.h"
 #include "soundcloud/core/use_cases/search_tracks_use_case.h"
+#include "soundcloud/core/use_cases/select_audio_output_device_use_case.h"
 #include "soundcloud/core/use_cases/select_equalizer_preset_use_case.h"
 #include "soundcloud/core/use_cases/seek_playback_use_case.h"
 #include "soundcloud/core/use_cases/set_equalizer_band_gain_use_case.h"
@@ -35,11 +37,13 @@ public:
     app_bridge(
         core::use_cases::get_equalizer_state_use_case get_equalizer_state_use_case,
         core::use_cases::get_playback_state_use_case get_playback_state_use_case,
+        core::use_cases::list_audio_output_devices_use_case list_audio_output_devices_use_case,
         core::use_cases::list_featured_tracks_use_case list_featured_tracks_use_case,
         core::use_cases::play_track_use_case play_track_use_case,
         core::use_cases::pause_playback_use_case pause_playback_use_case,
         core::use_cases::resume_playback_use_case resume_playback_use_case,
         core::use_cases::seek_playback_use_case seek_playback_use_case,
+        core::use_cases::select_audio_output_device_use_case select_audio_output_device_use_case,
         core::use_cases::set_playback_volume_use_case set_playback_volume_use_case,
         core::use_cases::set_equalizer_enabled_use_case set_equalizer_enabled_use_case,
         core::use_cases::select_equalizer_preset_use_case select_equalizer_preset_use_case,
@@ -59,6 +63,7 @@ private:
     std::string build_app_info_response() const;
     std::string build_get_equalizer_state_response() const;
     std::string build_get_playback_state_response() const;
+    std::string build_get_audio_output_devices_response() const;
     std::string build_get_queue_state_response() const;
     std::string build_get_featured_tracks_response(const std::string& request_json) const;
     std::string build_enqueue_track_response(const std::string& request_json) const;
@@ -72,6 +77,7 @@ private:
     std::string build_pause_playback_response() const;
     std::string build_resume_playback_response() const;
     std::string build_seek_playback_response(const std::string& request_json) const;
+    std::string build_select_audio_output_device_response(const std::string& request_json) const;
     std::string build_set_playback_volume_response(const std::string& request_json) const;
     std::string build_set_equalizer_enabled_response(const std::string& request_json) const;
     std::string build_select_equalizer_preset_response(const std::string& request_json) const;
@@ -85,6 +91,8 @@ private:
     core::use_cases::get_equalizer_state_use_case get_equalizer_state_use_case_;
     // Read-only playback snapshot из player.
     core::use_cases::get_playback_state_use_case get_playback_state_use_case_;
+    // Список доступных output devices.
+    core::use_cases::list_audio_output_devices_use_case list_audio_output_devices_use_case_;
     // Стартовая витрина популярных треков.
     core::use_cases::list_featured_tracks_use_case list_featured_tracks_use_case_;
     // Запуск нового трека.
@@ -95,6 +103,8 @@ private:
     core::use_cases::resume_playback_use_case resume_playback_use_case_;
     // Transport seek.
     core::use_cases::seek_playback_use_case seek_playback_use_case_;
+    // Output device selection.
+    core::use_cases::select_audio_output_device_use_case select_audio_output_device_use_case_;
     // Playback volume.
     core::use_cases::set_playback_volume_use_case set_playback_volume_use_case_;
     // EQ bypass toggle.

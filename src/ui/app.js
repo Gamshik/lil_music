@@ -24,6 +24,11 @@ const playbackToggleButtonElement = document.getElementById("playback-toggle-but
 const nextTrackButtonElement = document.getElementById("next-track-button");
 const volumeSliderElement = document.getElementById("volume-slider");
 const volumeValueElement = document.getElementById("volume-value");
+const outputDeviceSelectElement = document.getElementById("output-device-select");
+const refreshOutputDevicesButtonElement = document.getElementById(
+  "refresh-output-devices-button",
+);
+const outputDeviceSummaryElement = document.getElementById("output-device-summary");
 const loadFeaturedButtonElement = document.getElementById("load-featured-button");
 const queueCountElement = document.getElementById("queue-count");
 const queueListElement = document.getElementById("queue-list");
@@ -65,6 +70,7 @@ let latestQueueState = {
   canPlayPrevious: false,
   canPlayNext: false,
 };
+let latestAudioOutputDevices = [];
 let latestEqualizerState = {
   status: "loading",
   enabled: false,
@@ -171,6 +177,43 @@ function setVolumeLevel(volumePercent) {
   const safeVolumePercent = Math.max(0, Math.min(100, Number(volumePercent) || 0));
   volumeSliderElement.value = String(safeVolumePercent);
   volumeValueElement.textContent = `${safeVolumePercent}%`;
+}
+
+function renderAudioOutputDevices() {
+  outputDeviceSelectElement.replaceChildren();
+
+  if (latestAudioOutputDevices.length === 0) {
+    const emptyOptionElement = document.createElement("option");
+    emptyOptionElement.value = "";
+    emptyOptionElement.textContent = "Устройства вывода недоступны";
+    outputDeviceSelectElement.append(emptyOptionElement);
+    outputDeviceSelectElement.disabled = true;
+    outputDeviceSummaryElement.textContent = "Нет активных устройств";
+    return;
+  }
+
+  const selectedDevice =
+    latestAudioOutputDevices.find((device) => device.isSelected) || latestAudioOutputDevices[0];
+
+  latestAudioOutputDevices.forEach((device) => {
+    const optionElement = document.createElement("option");
+    optionElement.value = device.id;
+    optionElement.selected = Boolean(device.isSelected);
+    optionElement.textContent = device.isDefault
+      ? `${device.displayName} · по умолчанию`
+      : device.displayName;
+    outputDeviceSelectElement.append(optionElement);
+  });
+
+  outputDeviceSelectElement.disabled = false;
+  outputDeviceSummaryElement.textContent = selectedDevice.isDefault
+    ? `${selectedDevice.displayName} · по умолчанию`
+    : selectedDevice.displayName;
+}
+
+function applyAudioOutputDevicesSnapshot(devices) {
+  latestAudioOutputDevices = Array.isArray(devices) ? devices : [];
+  renderAudioOutputDevices();
 }
 
 function setPlaybackToggleState({ disabled, paused }) {
@@ -632,6 +675,19 @@ function renderQueue() {
 
   updateCurrentTrackHighlights();
   syncTransportButtons();
+}
+
+async function refreshAudioOutputDevices() {
+  if (typeof window.getAudioOutputDevices !== "function") {
+    return;
+  }
+
+  const response = normalizeBridgePayload(await window.getAudioOutputDevices());
+  if (response?.ok === false) {
+    throw new Error(response.message || "Не удалось получить список устройств вывода.");
+  }
+
+  applyAudioOutputDevicesSnapshot(response.devices);
 }
 
 async function refreshQueueState() {
@@ -1538,6 +1594,41 @@ async function handleVolumeChange(event) {
   }
 }
 
+async function handleAudioOutputDeviceChange(event) {
+  if (typeof window.selectAudioOutputDevice !== "function") {
+    return;
+  }
+
+  const deviceId = event.target.value || "";
+  try {
+    if (hasLoadedTrack) {
+      setPlaybackStatus("Переключаем вывод", "Подготавливаем audio path для выбранного устройства.");
+      setPlaybackVisualState("loading");
+    }
+
+    const response = normalizeBridgePayload(await window.selectAudioOutputDevice({ deviceId }));
+    if (response?.ok === false) {
+      throw new Error(response.message || "Не удалось переключить устройство вывода.");
+    }
+
+    applyAudioOutputDevicesSnapshot(response.devices);
+    await refreshPlaybackState();
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    setPlaybackStatus("Ошибка вывода", errorMessage);
+    void refreshAudioOutputDevices().catch(() => {});
+  }
+}
+
+async function handleRefreshAudioOutputDevices() {
+  try {
+    await refreshAudioOutputDevices();
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    setPlaybackStatus("Ошибка вывода", errorMessage);
+  }
+}
+
 async function handleShuffleToggle() {
   if (typeof window.toggleShuffle !== "function") {
     return;
@@ -1805,6 +1896,7 @@ async function initializePage() {
   setRepeatMode("none");
   setPlaybackVisualState("idle");
   renderEqualizer();
+  renderAudioOutputDevices();
   setActiveTab(activeTabId);
   renderFeaturedTracks([], "Здесь появятся популярные треки.");
   renderTracks([], "Результаты поиска появятся здесь.");
@@ -1816,6 +1908,12 @@ async function initializePage() {
   }
 
   await refreshQueueState();
+  try {
+    await refreshAudioOutputDevices();
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    setPlaybackStatus("Ошибка вывода", errorMessage);
+  }
   await refreshPlaybackState();
   try {
     await refreshEqualizerState();
@@ -1883,6 +1981,12 @@ playbackProgressTrackElement.addEventListener("pointercancel", handleProgressPoi
 volumeSliderElement.addEventListener("input", handleVolumeInput);
 volumeSliderElement.addEventListener("change", (event) => {
   void handleVolumeChange(event);
+});
+outputDeviceSelectElement.addEventListener("change", (event) => {
+  void handleAudioOutputDeviceChange(event);
+});
+refreshOutputDevicesButtonElement.addEventListener("click", () => {
+  void handleRefreshAudioOutputDevices();
 });
 loadFeaturedButtonElement.addEventListener("click", () => {
   setActiveTab("home");

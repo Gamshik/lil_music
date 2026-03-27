@@ -1,6 +1,7 @@
 add_library(soundcloud_core
     src/get_equalizer_state_use_case.cpp
     src/get_playback_state_use_case.cpp
+    src/list_audio_output_devices_use_case.cpp
     src/list_featured_tracks_use_case.cpp
     src/playback_session.cpp
     src/play_track_use_case.cpp
@@ -14,6 +15,7 @@ add_library(soundcloud_core
     src/set_equalizer_output_gain_use_case.cpp
     src/set_playback_volume_use_case.cpp
     src/search_tracks_use_case.cpp
+    src/select_audio_output_device_use_case.cpp
     src/toggle_favorite_use_case.cpp
 )
 

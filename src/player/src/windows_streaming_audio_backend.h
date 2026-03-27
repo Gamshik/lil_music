@@ -3,7 +3,9 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
+#include "soundcloud/core/domain/audio_output_device.h"
 #include "soundcloud/core/domain/equalizer_preset.h"
 #include "soundcloud/core/domain/equalizer_state.h"
 #include "soundcloud/core/domain/playback_state.h"
@@ -37,6 +39,8 @@ public:
      */
     void seek_to(std::int64_t position_ms);
     void set_volume_percent(int volume_percent);
+    [[nodiscard]] std::vector<core::domain::audio_output_device> list_audio_output_devices() const;
+    void select_audio_output_device(const std::string& device_id);
 
     // Ниже идёт публичный EQ API backend-а.
     void set_equalizer_enabled(bool enabled);

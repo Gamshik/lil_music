@@ -124,6 +124,33 @@
             />
             <span id="volume-value" class="volume-value">100%</span>
           </label>
+
+          <div class="output-device-control">
+            <div class="output-device-head">
+              <label class="output-device-label" for="output-device-select">Вывод</label>
+              <span id="output-device-summary" class="output-device-summary">Системное устройство</span>
+            </div>
+            <div class="output-device-row">
+              <div class="output-device-select-wrap">
+                <select
+                  id="output-device-select"
+                  class="output-device-select"
+                  aria-label="Устройство вывода аудио"
+                >
+                  <option>Загрузка устройств...</option>
+                </select>
+                <span class="output-device-chevron" aria-hidden="true"></span>
+              </div>
+              <button
+                id="refresh-output-devices-button"
+                class="secondary-button output-device-refresh-button"
+                type="button"
+                aria-label="Обновить список устройств вывода"
+              >
+                Обновить
+              </button>
+            </div>
+          </div>
         </div>
       </section>
 

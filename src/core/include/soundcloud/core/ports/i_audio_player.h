@@ -3,7 +3,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
+#include "soundcloud/core/domain/audio_output_device.h"
 #include "soundcloud/core/domain/equalizer_preset.h"
 #include "soundcloud/core/domain/equalizer_state.h"
 #include "soundcloud/core/domain/playback_state.h"
@@ -42,6 +44,18 @@ public:
      * Меняет громкость текущего playback в нормализованном диапазоне 0..100.
      */
     virtual void set_volume_percent(int volume_percent) = 0;
+
+    /**
+     * Возвращает список доступных output devices и текущий активный выбор.
+     */
+    [[nodiscard]] virtual std::vector<domain::audio_output_device> list_audio_output_devices()
+        const = 0;
+
+    /**
+     * Переключает playback backend на конкретное устройство вывода.
+     * Пустой id означает возврат к system default endpoint.
+     */
+    virtual void select_audio_output_device(const std::string& device_id) = 0;
 
     /**
      * Включает или выключает EQ без потери сохранённых пользовательских настроек.

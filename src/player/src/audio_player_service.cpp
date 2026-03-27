@@ -46,6 +46,17 @@ void audio_player_service::set_volume_percent(const int volume_percent) {
     backend_->set_volume_percent(volume_percent);
 }
 
+std::vector<core::domain::audio_output_device> audio_player_service::list_audio_output_devices()
+    const {
+    // Список устройств остаётся частью backend-specific состояния audio path.
+    return backend_->list_audio_output_devices();
+}
+
+void audio_player_service::select_audio_output_device(const std::string& device_id) {
+    // Фасад не решает, как переключать endpoint: это полностью ответственность backend-а.
+    backend_->select_audio_output_device(device_id);
+}
+
 void audio_player_service::set_equalizer_enabled(const bool enabled) {
     // EQ bypass полностью делегируем backend-у, чтобы core не знал о DSP реализации.
     backend_->set_equalizer_enabled(enabled);

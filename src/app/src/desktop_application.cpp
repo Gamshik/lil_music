@@ -8,12 +8,14 @@
 #include "soundcloud/core/domain/equalizer_state.h"
 #include "soundcloud/core/use_cases/get_equalizer_state_use_case.h"
 #include "soundcloud/core/use_cases/get_playback_state_use_case.h"
+#include "soundcloud/core/use_cases/list_audio_output_devices_use_case.h"
 #include "soundcloud/core/use_cases/list_featured_tracks_use_case.h"
 #include "soundcloud/core/use_cases/pause_playback_use_case.h"
 #include "soundcloud/core/use_cases/play_track_use_case.h"
 #include "soundcloud/core/use_cases/reset_equalizer_use_case.h"
 #include "soundcloud/core/use_cases/resume_playback_use_case.h"
 #include "soundcloud/core/use_cases/search_tracks_use_case.h"
+#include "soundcloud/core/use_cases/select_audio_output_device_use_case.h"
 #include "soundcloud/core/use_cases/select_equalizer_preset_use_case.h"
 #include "soundcloud/core/use_cases/seek_playback_use_case.h"
 #include "soundcloud/core/use_cases/set_equalizer_band_gain_use_case.h"
@@ -50,11 +52,13 @@ desktop_application::desktop_application()
       bridge_(
           core::use_cases::get_equalizer_state_use_case(audio_player_),
           core::use_cases::get_playback_state_use_case(audio_player_),
+          core::use_cases::list_audio_output_devices_use_case(audio_player_),
           core::use_cases::list_featured_tracks_use_case(api_client_),
           core::use_cases::play_track_use_case(api_client_, audio_player_),
           core::use_cases::pause_playback_use_case(audio_player_),
           core::use_cases::resume_playback_use_case(audio_player_),
           core::use_cases::seek_playback_use_case(audio_player_),
+          core::use_cases::select_audio_output_device_use_case(audio_player_),
           core::use_cases::set_playback_volume_use_case(audio_player_),
           core::use_cases::set_equalizer_enabled_use_case(audio_player_, equalizer_settings_repository_),
           core::use_cases::select_equalizer_preset_use_case(audio_player_, equalizer_settings_repository_),

@@ -4,7 +4,9 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
+#include "soundcloud/core/domain/audio_output_device.h"
 #include "soundcloud/core/domain/equalizer_preset.h"
 #include "soundcloud/core/domain/equalizer_state.h"
 #include "soundcloud/core/ports/i_audio_player.h"
@@ -58,6 +60,17 @@ public:
      * Меняет громкость backend-а в нормализованном формате 0..100.
      */
     void set_volume_percent(int volume_percent) override;
+
+    /**
+     * Возвращает список устройств вывода, которые доступны текущему WASAPI backend-у.
+     */
+    [[nodiscard]] std::vector<core::domain::audio_output_device> list_audio_output_devices()
+        const override;
+
+    /**
+     * Переключает backend на выбранное устройство вывода или на system default.
+     */
+    void select_audio_output_device(const std::string& device_id) override;
 
     /**
      * Включает/выключает EQ без потери текущих пользовательских значений полос.
