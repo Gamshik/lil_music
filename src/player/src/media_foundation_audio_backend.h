@@ -53,6 +53,11 @@ public:
     void seek_to(std::int64_t position_ms);
 
     /**
+     * Меняет громкость Media Foundation transport-а в процентах 0..100.
+     */
+    void set_volume_percent(int volume_percent);
+
+    /**
      * Возвращает доменный playback snapshot, собранный из native state и событий.
      */
     [[nodiscard]] core::domain::playback_state get_playback_state() const;

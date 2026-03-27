@@ -36,6 +36,11 @@ public:
     virtual void seek_to(std::int64_t position_ms) = 0;
 
     /**
+     * Меняет громкость текущего playback в нормализованном диапазоне 0..100.
+     */
+    virtual void set_volume_percent(int volume_percent) = 0;
+
+    /**
      * Возвращает текущее нормализованное состояние плеера.
      */
     [[nodiscard]] virtual domain::playback_state get_playback_state() const = 0;

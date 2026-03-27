@@ -1,5 +1,6 @@
 #include "soundcloud/bridge/app_bridge.h"
 
+#include <algorithm>
 #include <exception>
 #include <sstream>
 #include <utility>
@@ -96,6 +97,7 @@ app_bridge::app_bridge(
     core::use_cases::pause_playback_use_case pause_playback_use_case,
     core::use_cases::resume_playback_use_case resume_playback_use_case,
     core::use_cases::seek_playback_use_case seek_playback_use_case,
+    core::use_cases::set_playback_volume_use_case set_playback_volume_use_case,
     core::use_cases::search_tracks_use_case search_tracks_use_case,
     core::use_cases::toggle_favorite_use_case toggle_favorite_use_case)
     : get_playback_state_use_case_(std::move(get_playback_state_use_case)),
@@ -104,6 +106,7 @@ app_bridge::app_bridge(
       pause_playback_use_case_(std::move(pause_playback_use_case)),
       resume_playback_use_case_(std::move(resume_playback_use_case)),
       seek_playback_use_case_(std::move(seek_playback_use_case)),
+      set_playback_volume_use_case_(std::move(set_playback_volume_use_case)),
       search_tracks_use_case_(std::move(search_tracks_use_case)),
       toggle_favorite_use_case_(std::move(toggle_favorite_use_case)) {}
 
@@ -170,6 +173,12 @@ std::vector<ui_binding> app_bridge::get_bindings() const {
             },
         },
         ui_binding{
+            .name = "setPlaybackVolume",
+            .handler = [this](const std::string& request_json) {
+                return build_set_playback_volume_response(request_json);
+            },
+        },
+        ui_binding{
             .name = "searchTracks",
             .handler = [this](const std::string& request_json) {
                 return build_search_tracks_response(request_json);
@@ -207,6 +216,7 @@ std::string app_bridge::build_get_playback_state_response() const {
                  << bridge_json_codec::escape_string(playback_state.error_message)
                  << R"(,"positionMs":)" << playback_state.position_ms
                  << R"(,"durationMs":)" << playback_state.duration_ms
+                 << R"(,"volumePercent":)" << playback_state.volume_percent
                  << R"(,"completionToken":)" << playback_state.completion_token
                  << R"(,"trackId":)" << bridge_json_codec::escape_string(queue_state.current_track_id)
                  << R"(,"trackTitle":)"
@@ -441,6 +451,22 @@ std::string app_bridge::build_seek_playback_response(const std::string& request_
                  << R"(,"trackId":)"
                  << bridge_json_codec::escape_string(
                         playback_session_.get_queue_state().current_track_id)
+                 << '}';
+        return response.str();
+    } catch (const std::exception& exception) {
+        return build_error_response(exception.what());
+    }
+}
+
+std::string app_bridge::build_set_playback_volume_response(const std::string& request_json) const {
+    try {
+        const int volume_percent =
+            bridge_json_codec::read_integer_field_from_first_argument(request_json, "volumePercent")
+                .value_or(100);
+        set_playback_volume_use_case_.execute(volume_percent);
+
+        std::ostringstream response;
+        response << R"({"ok":true,"volumePercent":)" << (std::clamp)(volume_percent, 0, 100)
                  << '}';
         return response.str();
     } catch (const std::exception& exception) {

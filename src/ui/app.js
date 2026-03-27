@@ -13,11 +13,14 @@ const playbackStatusElement = document.getElementById("playback-status");
 const currentTrackElement = document.getElementById("current-track");
 const playbackProgressTrackElement = document.getElementById("playback-progress-track");
 const playbackProgressFillElement = document.getElementById("playback-progress-fill");
+const playbackProgressThumbElement = document.getElementById("playback-progress-thumb");
 const playbackPositionElement = document.getElementById("playback-position");
 const playbackDurationElement = document.getElementById("playback-duration");
 const prevTrackButtonElement = document.getElementById("prev-track-button");
 const playbackToggleButtonElement = document.getElementById("playback-toggle-button");
 const nextTrackButtonElement = document.getElementById("next-track-button");
+const volumeSliderElement = document.getElementById("volume-slider");
+const volumeValueElement = document.getElementById("volume-value");
 const loadFeaturedButtonElement = document.getElementById("load-featured-button");
 const queueCountElement = document.getElementById("queue-count");
 const queueListElement = document.getElementById("queue-list");
@@ -36,6 +39,7 @@ let latestPlaybackState = {
   state: "idle",
   positionMs: 0,
   durationMs: 0,
+  volumePercent: 100,
   completionToken: 0,
   trackId: "",
   trackTitle: "",
@@ -53,6 +57,10 @@ let isStartingPlayback = false;
 let isTransportCommandInFlight = false;
 let suppressPlaybackErrorsUntilMs = 0;
 let activeTabId = "home";
+let isProgressDragging = false;
+let progressDragRatio = 0;
+let progressDragPointerId = null;
+let volumeSyncTimer = null;
 
 function normalizeBridgePayload(payload) {
   // Bridge может вернуть как уже распарсенный объект, так и JSON-строку.
@@ -125,13 +133,45 @@ function setPlaybackProgress(positionMs, durationMs) {
   const progressPercent = safeDuration > 0 ? Math.min(100, (safePosition / safeDuration) * 100) : 0;
 
   playbackProgressFillElement.style.width = `${progressPercent}%`;
+  playbackProgressThumbElement.style.left = `${progressPercent}%`;
+  playbackProgressTrackElement.setAttribute("aria-valuenow", String(Math.round(progressPercent)));
   playbackPositionElement.textContent = formatMilliseconds(safePosition);
   playbackDurationElement.textContent = formatMilliseconds(safeDuration);
+}
+
+function setVolumeLevel(volumePercent) {
+  const safeVolumePercent = Math.max(0, Math.min(100, Number(volumePercent) || 0));
+  volumeSliderElement.value = String(safeVolumePercent);
+  volumeValueElement.textContent = `${safeVolumePercent}%`;
 }
 
 function setPlaybackToggleState({ disabled, paused }) {
   playbackToggleButtonElement.disabled = disabled;
   playbackToggleButtonElement.textContent = paused ? "Продолжить" : "Пауза";
+}
+
+function canSeekPlayback() {
+  return (
+    hasLoadedTrack &&
+    latestPlaybackState.durationMs > 0 &&
+    typeof window.seekPlayback === "function"
+  );
+}
+
+function getProgressRatioFromClientX(clientX) {
+  const trackRect = playbackProgressTrackElement.getBoundingClientRect();
+  if (trackRect.width <= 0) {
+    return 0;
+  }
+
+  return Math.min(1, Math.max(0, (clientX - trackRect.left) / trackRect.width));
+}
+
+function previewDraggedProgress(ratio) {
+  progressDragRatio = Math.min(1, Math.max(0, ratio));
+  const previewPositionMs = Math.round(latestPlaybackState.durationMs * progressDragRatio);
+  playbackProgressTrackElement.classList.add("is-dragging");
+  setPlaybackProgress(previewPositionMs, latestPlaybackState.durationMs);
 }
 
 function markPendingTrackSwitch(trackId, trackTitle) {
@@ -541,6 +581,10 @@ async function refreshPlaybackState() {
       state: response.state || "idle",
       positionMs: response.positionMs || 0,
       durationMs: response.durationMs || 0,
+      volumePercent:
+        typeof response.volumePercent === "number"
+          ? response.volumePercent
+          : latestPlaybackState.volumePercent,
       completionToken: response.completionToken || 0,
       trackId: response.trackId || currentTrackId,
       trackTitle: response.trackTitle || currentTrackTitle,
@@ -570,7 +614,10 @@ async function refreshPlaybackState() {
         latestPlaybackState.state === "loading",
       paused: isPlaybackPaused,
     });
-    setPlaybackProgress(latestPlaybackState.positionMs, latestPlaybackState.durationMs);
+    if (!isProgressDragging) {
+      setPlaybackProgress(latestPlaybackState.positionMs, latestPlaybackState.durationMs);
+    }
+    setVolumeLevel(latestPlaybackState.volumePercent);
 
     if (latestPlaybackState.state === "error") {
       if (isStartingPlayback && Date.now() < suppressPlaybackErrorsUntilMs) {
@@ -807,16 +854,11 @@ async function handleNextTrack() {
 }
 
 async function handleProgressSeek(event) {
-  if (
-    !hasLoadedTrack ||
-    latestPlaybackState.durationMs <= 0 ||
-    typeof window.seekPlayback !== "function"
-  ) {
+  if (!canSeekPlayback()) {
     return;
   }
 
-  const trackRect = playbackProgressTrackElement.getBoundingClientRect();
-  const ratio = Math.min(1, Math.max(0, (event.clientX - trackRect.left) / trackRect.width));
+  const ratio = getProgressRatioFromClientX(event.clientX);
   const targetPositionMs = Math.round(latestPlaybackState.durationMs * ratio);
 
   try {
@@ -830,6 +872,127 @@ async function handleProgressSeek(event) {
     latestPlaybackState.positionMs = targetPositionMs;
     setPlaybackProgress(targetPositionMs, latestPlaybackState.durationMs);
     await refreshPlaybackState();
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    setPlaybackStatus("Ошибка playback", errorMessage);
+  }
+}
+
+function handleProgressPointerDown(event) {
+  if (!canSeekPlayback()) {
+    return;
+  }
+
+  isProgressDragging = true;
+  progressDragPointerId = event.pointerId;
+  playbackProgressTrackElement.setPointerCapture(event.pointerId);
+  previewDraggedProgress(getProgressRatioFromClientX(event.clientX));
+}
+
+function handleProgressPointerMove(event) {
+  if (!isProgressDragging || event.pointerId !== progressDragPointerId) {
+    return;
+  }
+
+  previewDraggedProgress(getProgressRatioFromClientX(event.clientX));
+}
+
+function finishProgressDragging() {
+  isProgressDragging = false;
+  progressDragPointerId = null;
+  playbackProgressTrackElement.classList.remove("is-dragging");
+}
+
+function handleProgressPointerCancel(event) {
+  if (!isProgressDragging || event.pointerId !== progressDragPointerId) {
+    return;
+  }
+
+  if (playbackProgressTrackElement.hasPointerCapture(event.pointerId)) {
+    playbackProgressTrackElement.releasePointerCapture(event.pointerId);
+  }
+
+  finishProgressDragging();
+  setPlaybackProgress(latestPlaybackState.positionMs, latestPlaybackState.durationMs);
+}
+
+async function handleProgressPointerUp(event) {
+  if (!isProgressDragging || event.pointerId !== progressDragPointerId) {
+    return;
+  }
+
+  const pointerId = progressDragPointerId;
+  const targetPositionMs = Math.round(latestPlaybackState.durationMs * progressDragRatio);
+  finishProgressDragging();
+
+  if (playbackProgressTrackElement.hasPointerCapture(pointerId)) {
+    playbackProgressTrackElement.releasePointerCapture(pointerId);
+  }
+
+  try {
+    const response = normalizeBridgePayload(await window.seekPlayback({ positionMs: targetPositionMs }));
+    if (response?.ok === false) {
+      throw new Error(response.message || "Не удалось перемотать трек.");
+    }
+
+    latestPlaybackState.positionMs = targetPositionMs;
+    setPlaybackProgress(targetPositionMs, latestPlaybackState.durationMs);
+    await refreshPlaybackState();
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    setPlaybackStatus("Ошибка playback", errorMessage);
+  }
+}
+
+function scheduleVolumeSync(volumePercent) {
+  if (volumeSyncTimer !== null) {
+    window.clearTimeout(volumeSyncTimer);
+  }
+
+  volumeSyncTimer = window.setTimeout(() => {
+    volumeSyncTimer = null;
+    void applyVolumeChange(volumePercent).catch((error) => {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      setPlaybackStatus("Ошибка playback", errorMessage);
+    });
+  }, 80);
+}
+
+async function applyVolumeChange(volumePercent) {
+  if (typeof window.setPlaybackVolume !== "function") {
+    return;
+  }
+
+  const safeVolumePercent = Math.max(0, Math.min(100, Number(volumePercent) || 0));
+  const response = normalizeBridgePayload(
+    await window.setPlaybackVolume({ volumePercent: safeVolumePercent }),
+  );
+  if (response?.ok === false) {
+    throw new Error(response.message || "Не удалось изменить громкость.");
+  }
+
+  latestPlaybackState.volumePercent =
+    typeof response.volumePercent === "number" ? response.volumePercent : safeVolumePercent;
+  setVolumeLevel(latestPlaybackState.volumePercent);
+}
+
+function handleVolumeInput(event) {
+  const nextVolumePercent = Number.parseInt(event.target.value, 10) || 0;
+  setVolumeLevel(nextVolumePercent);
+  latestPlaybackState.volumePercent = nextVolumePercent;
+  scheduleVolumeSync(nextVolumePercent);
+}
+
+async function handleVolumeChange(event) {
+  const nextVolumePercent = Number.parseInt(event.target.value, 10) || 0;
+
+  if (volumeSyncTimer !== null) {
+    window.clearTimeout(volumeSyncTimer);
+    volumeSyncTimer = null;
+  }
+
+  try {
+    await applyVolumeChange(nextVolumePercent);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     setPlaybackStatus("Ошибка playback", errorMessage);
@@ -854,6 +1017,7 @@ async function initializePage() {
   // потом подтягиваем queue/playback state и только после этого стартуем витрину и polling.
   setPlaybackToggleState({ disabled: true, paused: false });
   setPlaybackProgress(0, 0);
+  setVolumeLevel(100);
   setPlaybackVisualState("idle");
   setActiveTab(activeTabId);
   renderFeaturedTracks([], "Здесь появятся популярные треки.");
@@ -892,8 +1056,15 @@ playbackToggleButtonElement.addEventListener("click", () => {
 nextTrackButtonElement.addEventListener("click", () => {
   void handleNextTrack();
 });
-playbackProgressTrackElement.addEventListener("click", (event) => {
-  void handleProgressSeek(event);
+playbackProgressTrackElement.addEventListener("pointerdown", handleProgressPointerDown);
+playbackProgressTrackElement.addEventListener("pointermove", handleProgressPointerMove);
+playbackProgressTrackElement.addEventListener("pointerup", (event) => {
+  void handleProgressPointerUp(event);
+});
+playbackProgressTrackElement.addEventListener("pointercancel", handleProgressPointerCancel);
+volumeSliderElement.addEventListener("input", handleVolumeInput);
+volumeSliderElement.addEventListener("change", (event) => {
+  void handleVolumeChange(event);
 });
 loadFeaturedButtonElement.addEventListener("click", () => {
   setActiveTab("home");

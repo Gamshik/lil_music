@@ -39,6 +39,11 @@ void audio_player_service::seek_to(const std::int64_t position_ms) {
     backend_->seek_to(position_ms);
 }
 
+void audio_player_service::set_volume_percent(const int volume_percent) {
+    // Громкость остаётся частью backend-specific управления transport-ом.
+    backend_->set_volume_percent(volume_percent);
+}
+
 core::domain::playback_state audio_player_service::get_playback_state() const {
     // Возвращаем готовый доменный снимок состояния без утечки native-API наружу.
     return backend_->get_playback_state();

@@ -11,6 +11,7 @@
 #include "soundcloud/core/use_cases/resume_playback_use_case.h"
 #include "soundcloud/core/use_cases/search_tracks_use_case.h"
 #include "soundcloud/core/use_cases/seek_playback_use_case.h"
+#include "soundcloud/core/use_cases/set_playback_volume_use_case.h"
 #include "soundcloud/core/use_cases/toggle_favorite_use_case.h"
 
 namespace soundcloud::bridge {
@@ -32,6 +33,7 @@ public:
         core::use_cases::pause_playback_use_case pause_playback_use_case,
         core::use_cases::resume_playback_use_case resume_playback_use_case,
         core::use_cases::seek_playback_use_case seek_playback_use_case,
+        core::use_cases::set_playback_volume_use_case set_playback_volume_use_case,
         core::use_cases::search_tracks_use_case search_tracks_use_case,
         core::use_cases::toggle_favorite_use_case toggle_favorite_use_case);
 
@@ -53,6 +55,7 @@ private:
     std::string build_pause_playback_response() const;
     std::string build_resume_playback_response() const;
     std::string build_seek_playback_response(const std::string& request_json) const;
+    std::string build_set_playback_volume_response(const std::string& request_json) const;
     std::string build_search_tracks_response(const std::string& request_json) const;
     std::string build_toggle_favorite_response(const std::string& request_json) const;
 
@@ -62,6 +65,7 @@ private:
     core::use_cases::pause_playback_use_case pause_playback_use_case_;
     core::use_cases::resume_playback_use_case resume_playback_use_case_;
     core::use_cases::seek_playback_use_case seek_playback_use_case_;
+    core::use_cases::set_playback_volume_use_case set_playback_volume_use_case_;
     core::use_cases::search_tracks_use_case search_tracks_use_case_;
     core::use_cases::toggle_favorite_use_case toggle_favorite_use_case_;
     mutable core::services::playback_session playback_session_;

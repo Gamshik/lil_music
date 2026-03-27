@@ -56,8 +56,12 @@
               class="progress-track"
               role="slider"
               aria-label="Playback progress"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="0"
             >
               <div id="playback-progress-fill" class="progress-fill"></div>
+              <div id="playback-progress-thumb" class="progress-thumb" aria-hidden="true"></div>
             </div>
             <div class="progress-time">
               <span id="playback-position">0:00</span>
@@ -85,6 +89,21 @@
               Next
             </button>
           </div>
+
+          <label class="volume-control" for="volume-slider">
+            <span class="volume-label">Громкость</span>
+            <input
+              id="volume-slider"
+              class="volume-slider"
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              value="100"
+              aria-label="Громкость воспроизведения"
+            />
+            <span id="volume-value" class="volume-value">100%</span>
+          </label>
         </div>
       </section>
 

@@ -11,6 +11,7 @@
 #include "soundcloud/core/use_cases/resume_playback_use_case.h"
 #include "soundcloud/core/use_cases/search_tracks_use_case.h"
 #include "soundcloud/core/use_cases/seek_playback_use_case.h"
+#include "soundcloud/core/use_cases/set_playback_volume_use_case.h"
 #include "soundcloud/core/use_cases/toggle_favorite_use_case.h"
 #include "soundcloud/platform/window_configuration.h"
 
@@ -38,6 +39,7 @@ desktop_application::desktop_application()
           core::use_cases::pause_playback_use_case(audio_player_),
           core::use_cases::resume_playback_use_case(audio_player_),
           core::use_cases::seek_playback_use_case(audio_player_),
+          core::use_cases::set_playback_volume_use_case(audio_player_),
           core::use_cases::search_tracks_use_case(api_client_),
           core::use_cases::toggle_favorite_use_case(library_repository_)) {}
 

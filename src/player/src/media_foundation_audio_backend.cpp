@@ -1,5 +1,6 @@
 #include "media_foundation_audio_backend.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <exception>
@@ -154,6 +155,14 @@ std::int64_t convert_100ns_to_milliseconds(const std::int64_t value_100ns) {
     return value_100ns > 0 ? value_100ns / 10000 : 0;
 }
 
+float convert_volume_percent_to_native(const int volume_percent) {
+    return static_cast<float>((std::clamp)(volume_percent, 0, 100)) / 100.0F;
+}
+
+int convert_native_volume_to_percent(const float volume_level) {
+    return static_cast<int>(std::clamp(volume_level * 100.0F, 0.0F, 100.0F) + 0.5F);
+}
+
 std::uint64_t read_media_item_request_token(IMFPMediaItem* media_item) {
     if (media_item == nullptr) {
         return 0;
@@ -243,6 +252,8 @@ public:
         // Здесь создаётся сам MFPlay transport и сразу привязывается callback,
         // через который backend будет получать все асинхронные события плеера.
         throw_if_failed(create_player_result, "Создание Media Foundation player");
+        throw_if_failed(media_player_.get()->SetVolume(1.0F), "Установка стартовой громкости плеера");
+        playback_state_.volume_percent = 100;
     }
 
     ~implementation() {
@@ -373,6 +384,17 @@ public:
         playback_state_.error_message.clear();
     }
 
+    void set_volume_percent(const int volume_percent) {
+        std::scoped_lock lock(state_mutex_);
+
+        const int normalized_volume_percent = (std::clamp)(volume_percent, 0, 100);
+        throw_if_failed(
+            media_player_.get()->SetVolume(convert_volume_percent_to_native(normalized_volume_percent)),
+            "Изменение громкости воспроизведения");
+        playback_state_.volume_percent = normalized_volume_percent;
+        playback_state_.error_message.clear();
+    }
+
     [[nodiscard]] core::domain::playback_state get_playback_state() const {
         std::scoped_lock lock(state_mutex_);
         core::domain::playback_state playback_state = playback_state_;
@@ -386,6 +408,7 @@ public:
         playback_state.status = read_native_playback_status(playback_state.status);
         playback_state.position_ms = query_position_milliseconds();
         playback_state.duration_ms = query_duration_milliseconds();
+        playback_state.volume_percent = query_volume_percent(playback_state.volume_percent);
         return playback_state;
     }
 
@@ -644,6 +667,16 @@ private:
         return duration_ms;
     }
 
+    [[nodiscard]] int query_volume_percent(const int fallback_volume_percent) const {
+        float native_volume = 0.0F;
+        const HRESULT get_volume_result = media_player_.get()->GetVolume(&native_volume);
+        if (FAILED(get_volume_result)) {
+            return fallback_volume_percent;
+        }
+
+        return convert_native_volume_to_percent(native_volume);
+    }
+
     mutable std::mutex state_mutex_;
     // Этот mutex защищает весь mutable playback snapshot и request lifecycle.
     com_ptr<IMFPMediaPlayer> media_player_;
@@ -690,6 +723,10 @@ void media_foundation_audio_backend::pause() {
 
 void media_foundation_audio_backend::seek_to(const std::int64_t position_ms) {
     implementation_->seek_to(position_ms);
+}
+
+void media_foundation_audio_backend::set_volume_percent(const int volume_percent) {
+    implementation_->set_volume_percent(volume_percent);
 }
 
 core::domain::playback_state media_foundation_audio_backend::get_playback_state() const {

@@ -52,6 +52,11 @@ public:
     void seek_to(std::int64_t position_ms) override;
 
     /**
+     * Меняет громкость backend-а в нормализованном формате 0..100.
+     */
+    void set_volume_percent(int volume_percent) override;
+
+    /**
      * Возвращает доменный снимок состояния backend-а.
      * Это нужно bridge/UI, чтобы не вытаскивать из player native-детали напрямую.
      */

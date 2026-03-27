@@ -26,6 +26,7 @@ struct playback_state {
     std::string error_message;
     std::int64_t position_ms = 0;
     std::int64_t duration_ms = 0;
+    int volume_percent = 100;
     std::uint64_t completion_token = 0;
 };
 
