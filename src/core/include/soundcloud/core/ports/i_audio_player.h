@@ -1,8 +1,11 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 
+#include "soundcloud/core/domain/equalizer_preset.h"
+#include "soundcloud/core/domain/equalizer_state.h"
 #include "soundcloud/core/domain/playback_state.h"
 
 namespace soundcloud::core::ports {
@@ -41,9 +44,44 @@ public:
     virtual void set_volume_percent(int volume_percent) = 0;
 
     /**
+     * Включает или выключает EQ без потери сохранённых пользовательских настроек.
+     */
+    virtual void set_equalizer_enabled(bool enabled) = 0;
+
+    /**
+     * Применяет один из встроенных EQ-пресетов.
+     */
+    virtual void select_equalizer_preset(domain::equalizer_preset_id preset_id) = 0;
+
+    /**
+     * Меняет gain одной полосы эквалайзера в dB.
+     */
+    virtual void set_equalizer_band_gain(std::size_t band_index, float gain_db) = 0;
+
+    /**
+     * Сбрасывает EQ к Flat-настройке.
+     */
+    virtual void reset_equalizer() = 0;
+
+    /**
+     * Меняет общий уровень обработанного EQ-сигнала в dB.
+     */
+    virtual void set_equalizer_output_gain(float output_gain_db) = 0;
+
+    /**
+     * Восстанавливает ранее сохранённое EQ-состояние при старте приложения.
+     */
+    virtual void apply_equalizer_state(const domain::equalizer_state& equalizer_state) = 0;
+
+    /**
      * Возвращает текущее нормализованное состояние плеера.
      */
     [[nodiscard]] virtual domain::playback_state get_playback_state() const = 0;
+
+    /**
+     * Возвращает снимок текущего состояния EQ и его доступности.
+     */
+    [[nodiscard]] virtual domain::equalizer_state get_equalizer_state() const = 0;
 };
 
 }  // namespace soundcloud::core::ports

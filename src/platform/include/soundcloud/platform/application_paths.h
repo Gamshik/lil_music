@@ -11,6 +11,8 @@ namespace soundcloud::platform {
 struct application_paths {
     std::filesystem::path executable_directory;
     std::filesystem::path ui_entry_file;
+    std::filesystem::path local_app_data_directory;
+    std::filesystem::path settings_database_file;
 };
 
 /**

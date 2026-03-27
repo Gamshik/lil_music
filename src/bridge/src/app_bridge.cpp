@@ -42,6 +42,14 @@ std::string to_string(const core::domain::playback_repeat_mode repeat_mode) {
     return "none";
 }
 
+std::string equalizer_status_to_string(const core::domain::equalizer_status status) {
+    return std::string(core::domain::to_string(status));
+}
+
+std::string equalizer_preset_to_string(const core::domain::equalizer_preset_id preset_id) {
+    return std::string(core::domain::to_string(preset_id));
+}
+
 std::string build_error_response(const std::string& message) {
     std::ostringstream response;
     response << R"({"ok":false,"message":)" << bridge_json_codec::escape_string(message) << '}';
@@ -75,6 +83,58 @@ std::string serialize_track(const core::domain::track& track) {
     return serialized_track.str();
 }
 
+std::string serialize_equalizer_state(const core::domain::equalizer_state& equalizer_state) {
+    std::ostringstream response;
+    response << R"({"ok":true,"status":)"
+             << bridge_json_codec::escape_string(equalizer_status_to_string(equalizer_state.status))
+             << R"(,"enabled":)" << (equalizer_state.enabled ? "true" : "false")
+             << R"(,"activePresetId":)"
+             << bridge_json_codec::escape_string(equalizer_preset_to_string(equalizer_state.active_preset_id))
+             << R"(,"outputGainDb":)" << equalizer_state.output_gain_db
+             << R"(,"headroomCompensationDb":)" << equalizer_state.headroom_compensation_db
+             << R"(,"errorMessage":)"
+             << bridge_json_codec::escape_string(equalizer_state.error_message)
+             << R"(,"bands":[)";
+
+    for (std::size_t index = 0; index < equalizer_state.bands.size(); ++index) {
+        if (index != 0) {
+            response << ',';
+        }
+
+        response << '{'
+                 << R"("index":)" << index << ','
+                 << R"("centerFrequencyHz":)" << equalizer_state.bands[index].center_frequency_hz
+                 << ','
+                 << R"("gainDb":)" << equalizer_state.bands[index].gain_db
+                 << '}';
+    }
+
+    response << R"(],"presets":[)";
+    for (std::size_t index = 0; index < equalizer_state.available_presets.size(); ++index) {
+        if (index != 0) {
+            response << ',';
+        }
+
+        const core::domain::equalizer_preset& preset = equalizer_state.available_presets[index];
+        response << '{'
+                 << R"("id":)" << bridge_json_codec::escape_string(equalizer_preset_to_string(preset.id)) << ','
+                 << R"("title":)" << bridge_json_codec::escape_string(preset.title) << ','
+                 << R"("isDerived":)" << (preset.id == core::domain::equalizer_preset_id::custom ? "true" : "false")
+                 << R"(,"gainsDb":[)";
+
+        for (std::size_t gain_index = 0; gain_index < preset.gains_db.size(); ++gain_index) {
+            if (gain_index != 0) {
+                response << ',';
+            }
+            response << preset.gains_db[gain_index];
+        }
+        response << "]}";
+    }
+
+    response << "]}";
+    return response.str();
+}
+
 std::string serialize_queue_state(
     const core::domain::playback_queue_state& queue_state,
     const std::optional<core::domain::track>& current_track) {
@@ -106,6 +166,7 @@ std::string serialize_queue_state(
 }  // namespace
 
 app_bridge::app_bridge(
+    core::use_cases::get_equalizer_state_use_case get_equalizer_state_use_case,
     core::use_cases::get_playback_state_use_case get_playback_state_use_case,
     core::use_cases::list_featured_tracks_use_case list_featured_tracks_use_case,
     core::use_cases::play_track_use_case play_track_use_case,
@@ -113,15 +174,26 @@ app_bridge::app_bridge(
     core::use_cases::resume_playback_use_case resume_playback_use_case,
     core::use_cases::seek_playback_use_case seek_playback_use_case,
     core::use_cases::set_playback_volume_use_case set_playback_volume_use_case,
+    core::use_cases::set_equalizer_enabled_use_case set_equalizer_enabled_use_case,
+    core::use_cases::select_equalizer_preset_use_case select_equalizer_preset_use_case,
+    core::use_cases::set_equalizer_band_gain_use_case set_equalizer_band_gain_use_case,
+    core::use_cases::set_equalizer_output_gain_use_case set_equalizer_output_gain_use_case,
+    core::use_cases::reset_equalizer_use_case reset_equalizer_use_case,
     core::use_cases::search_tracks_use_case search_tracks_use_case,
     core::use_cases::toggle_favorite_use_case toggle_favorite_use_case)
-    : get_playback_state_use_case_(std::move(get_playback_state_use_case)),
+    : get_equalizer_state_use_case_(std::move(get_equalizer_state_use_case)),
+      get_playback_state_use_case_(std::move(get_playback_state_use_case)),
       list_featured_tracks_use_case_(std::move(list_featured_tracks_use_case)),
       play_track_use_case_(std::move(play_track_use_case)),
       pause_playback_use_case_(std::move(pause_playback_use_case)),
       resume_playback_use_case_(std::move(resume_playback_use_case)),
       seek_playback_use_case_(std::move(seek_playback_use_case)),
       set_playback_volume_use_case_(std::move(set_playback_volume_use_case)),
+      set_equalizer_enabled_use_case_(std::move(set_equalizer_enabled_use_case)),
+      select_equalizer_preset_use_case_(std::move(select_equalizer_preset_use_case)),
+      set_equalizer_band_gain_use_case_(std::move(set_equalizer_band_gain_use_case)),
+      set_equalizer_output_gain_use_case_(std::move(set_equalizer_output_gain_use_case)),
+      reset_equalizer_use_case_(std::move(reset_equalizer_use_case)),
       search_tracks_use_case_(std::move(search_tracks_use_case)),
       toggle_favorite_use_case_(std::move(toggle_favorite_use_case)) {}
 
@@ -132,6 +204,10 @@ std::vector<ui_binding> app_bridge::get_bindings() const {
         ui_binding{
             .name = "getAppInfo",
             .handler = [this](const std::string&) { return build_app_info_response(); },
+        },
+        ui_binding{
+            .name = "getEqualizerState",
+            .handler = [this](const std::string&) { return build_get_equalizer_state_response(); },
         },
         ui_binding{
             .name = "getPlaybackState",
@@ -206,6 +282,34 @@ std::vector<ui_binding> app_bridge::get_bindings() const {
             },
         },
         ui_binding{
+            .name = "setEqualizerEnabled",
+            .handler = [this](const std::string& request_json) {
+                return build_set_equalizer_enabled_response(request_json);
+            },
+        },
+        ui_binding{
+            .name = "selectEqualizerPreset",
+            .handler = [this](const std::string& request_json) {
+                return build_select_equalizer_preset_response(request_json);
+            },
+        },
+        ui_binding{
+            .name = "setEqualizerBandGain",
+            .handler = [this](const std::string& request_json) {
+                return build_set_equalizer_band_gain_response(request_json);
+            },
+        },
+        ui_binding{
+            .name = "setEqualizerOutputGain",
+            .handler = [this](const std::string& request_json) {
+                return build_set_equalizer_output_gain_response(request_json);
+            },
+        },
+        ui_binding{
+            .name = "resetEqualizer",
+            .handler = [this](const std::string&) { return build_reset_equalizer_response(); },
+        },
+        ui_binding{
             .name = "searchTracks",
             .handler = [this](const std::string& request_json) {
                 return build_search_tracks_response(request_json);
@@ -222,7 +326,15 @@ std::vector<ui_binding> app_bridge::get_bindings() const {
 
 std::string app_bridge::build_app_info_response() const {
     // Лёгкий handshake для UI: подтверждаем, что bridge жив и какой playback backend активен.
-    return R"({"ok":true,"applicationName":"LilMusic","bridgeStatus":"connected","playbackBackend":"Media Foundation"})";
+    return R"({"ok":true,"applicationName":"LilMusic","bridgeStatus":"connected","playbackBackend":"WASAPI + Media Foundation Source Reader"})";
+}
+
+std::string app_bridge::build_get_equalizer_state_response() const {
+    try {
+        return serialize_equalizer_state(get_equalizer_state_use_case_.execute());
+    } catch (const std::exception& exception) {
+        return build_error_response(exception.what());
+    }
 }
 
 std::string app_bridge::build_get_playback_state_response() const {
@@ -557,6 +669,75 @@ std::string app_bridge::build_set_playback_volume_response(const std::string& re
         response << R"({"ok":true,"volumePercent":)" << (std::clamp)(volume_percent, 0, 100)
                  << '}';
         return response.str();
+    } catch (const std::exception& exception) {
+        return build_error_response(exception.what());
+    }
+}
+
+std::string app_bridge::build_set_equalizer_enabled_response(const std::string& request_json) const {
+    try {
+        const bool enabled =
+            bridge_json_codec::read_boolean_field_from_first_argument(request_json, "enabled")
+                .value_or(false);
+        return serialize_equalizer_state(set_equalizer_enabled_use_case_.execute(enabled));
+    } catch (const std::exception& exception) {
+        return build_error_response(exception.what());
+    }
+}
+
+std::string app_bridge::build_select_equalizer_preset_response(const std::string& request_json) const {
+    try {
+        const std::string preset_id = bridge_json_codec::read_string_field_from_first_argument(
+                                          request_json,
+                                          "presetId")
+                                          .value_or("");
+        const auto parsed_preset_id = core::domain::equalizer_preset_id_from_string(preset_id);
+        if (!parsed_preset_id.has_value()) {
+            return build_error_response("Неизвестный EQ preset.");
+        }
+
+        return serialize_equalizer_state(select_equalizer_preset_use_case_.execute(*parsed_preset_id));
+    } catch (const std::exception& exception) {
+        return build_error_response(exception.what());
+    }
+}
+
+std::string app_bridge::build_set_equalizer_band_gain_response(const std::string& request_json) const {
+    try {
+        const int band_index =
+            bridge_json_codec::read_integer_field_from_first_argument(request_json, "bandIndex")
+                .value_or(-1);
+        const float gain_db =
+            bridge_json_codec::read_float_field_from_first_argument(request_json, "gainDb")
+                .value_or(0.0F);
+        if (band_index < 0) {
+            return build_error_response("Не передан индекс EQ-полосы.");
+        }
+
+        return serialize_equalizer_state(
+            set_equalizer_band_gain_use_case_.execute(
+                static_cast<std::size_t>(band_index),
+                gain_db));
+    } catch (const std::exception& exception) {
+        return build_error_response(exception.what());
+    }
+}
+
+std::string app_bridge::build_reset_equalizer_response() const {
+    try {
+        return serialize_equalizer_state(reset_equalizer_use_case_.execute());
+    } catch (const std::exception& exception) {
+        return build_error_response(exception.what());
+    }
+}
+
+std::string app_bridge::build_set_equalizer_output_gain_response(const std::string& request_json) const {
+    try {
+        const float output_gain_db =
+            bridge_json_codec::read_float_field_from_first_argument(request_json, "outputGainDb")
+                .value_or(0.0F);
+        return serialize_equalizer_state(
+            set_equalizer_output_gain_use_case_.execute(output_gain_db));
     } catch (const std::exception& exception) {
         return build_error_response(exception.what());
     }

@@ -42,6 +42,34 @@ public:
         return read_integer_field_from_object(field_name);
     }
 
+    std::optional<float> read_float_field_from_first_argument(const std::string& field_name) {
+        skip_whitespace();
+        if (!consume('[')) {
+            return std::nullopt;
+        }
+
+        skip_whitespace();
+        if (consume(']')) {
+            return std::nullopt;
+        }
+
+        return read_float_field_from_object(field_name);
+    }
+
+    std::optional<bool> read_boolean_field_from_first_argument(const std::string& field_name) {
+        skip_whitespace();
+        if (!consume('[')) {
+            return std::nullopt;
+        }
+
+        skip_whitespace();
+        if (consume(']')) {
+            return std::nullopt;
+        }
+
+        return read_boolean_field_from_object(field_name);
+    }
+
 private:
     std::optional<std::string> read_string_field_from_object(const std::string& field_name) {
         if (!consume('{')) {
@@ -112,6 +140,96 @@ private:
             skip_whitespace();
             if (*key == field_name) {
                 return parse_integer();
+            }
+
+            if (!skip_value()) {
+                return std::nullopt;
+            }
+
+            skip_whitespace();
+            if (consume('}')) {
+                return std::nullopt;
+            }
+
+            if (!consume(',')) {
+                return std::nullopt;
+            }
+
+            skip_whitespace();
+        }
+
+        return std::nullopt;
+    }
+
+    std::optional<float> read_float_field_from_object(const std::string& field_name) {
+        if (!consume('{')) {
+            return std::nullopt;
+        }
+
+        skip_whitespace();
+        if (consume('}')) {
+            return std::nullopt;
+        }
+
+        while (!is_end()) {
+            const std::optional<std::string> key = parse_string();
+            if (!key.has_value()) {
+                return std::nullopt;
+            }
+
+            skip_whitespace();
+            if (!consume(':')) {
+                return std::nullopt;
+            }
+
+            skip_whitespace();
+            if (*key == field_name) {
+                return parse_float();
+            }
+
+            if (!skip_value()) {
+                return std::nullopt;
+            }
+
+            skip_whitespace();
+            if (consume('}')) {
+                return std::nullopt;
+            }
+
+            if (!consume(',')) {
+                return std::nullopt;
+            }
+
+            skip_whitespace();
+        }
+
+        return std::nullopt;
+    }
+
+    std::optional<bool> read_boolean_field_from_object(const std::string& field_name) {
+        if (!consume('{')) {
+            return std::nullopt;
+        }
+
+        skip_whitespace();
+        if (consume('}')) {
+            return std::nullopt;
+        }
+
+        while (!is_end()) {
+            const std::optional<std::string> key = parse_string();
+            if (!key.has_value()) {
+                return std::nullopt;
+            }
+
+            skip_whitespace();
+            if (!consume(':')) {
+                return std::nullopt;
+            }
+
+            skip_whitespace();
+            if (*key == field_name) {
+                return parse_boolean();
             }
 
             if (!skip_value()) {
@@ -242,6 +360,58 @@ private:
             position_ = token_begin;
             return std::nullopt;
         }
+    }
+
+    std::optional<float> parse_float() {
+        const std::size_t token_begin = position_;
+        if (peek('"')) {
+            const std::optional<std::string> number_as_string = parse_string();
+            if (!number_as_string.has_value()) {
+                return std::nullopt;
+            }
+
+            try {
+                return std::stof(*number_as_string);
+            } catch (const std::exception&) {
+                return std::nullopt;
+            }
+        }
+
+        if (peek('-')) {
+            ++position_;
+        }
+
+        if (!skip_digits()) {
+            position_ = token_begin;
+            return std::nullopt;
+        }
+
+        if (peek('.')) {
+            ++position_;
+            if (!skip_digits()) {
+                position_ = token_begin;
+                return std::nullopt;
+            }
+        }
+
+        try {
+            return std::stof(source_.substr(token_begin, position_ - token_begin));
+        } catch (const std::exception&) {
+            position_ = token_begin;
+            return std::nullopt;
+        }
+    }
+
+    std::optional<bool> parse_boolean() {
+        if (skip_literal("true")) {
+            return true;
+        }
+
+        if (skip_literal("false")) {
+            return false;
+        }
+
+        return std::nullopt;
     }
 
     bool skip_value() {
@@ -492,6 +662,20 @@ std::optional<int> bridge_json_codec::read_integer_field_from_first_argument(
     // Аналогично строковому варианту, но для числовых параметров вроде limit/offset/positionMs.
     json_reader reader(request_json);
     return reader.read_integer_field_from_first_argument(field_name);
+}
+
+std::optional<float> bridge_json_codec::read_float_field_from_first_argument(
+    const std::string& request_json,
+    const std::string& field_name) {
+    json_reader reader(request_json);
+    return reader.read_float_field_from_first_argument(field_name);
+}
+
+std::optional<bool> bridge_json_codec::read_boolean_field_from_first_argument(
+    const std::string& request_json,
+    const std::string& field_name) {
+    json_reader reader(request_json);
+    return reader.read_boolean_field_from_first_argument(field_name);
 }
 
 }  // namespace soundcloud::bridge

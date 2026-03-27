@@ -31,6 +31,14 @@ public:
     static std::optional<int> read_integer_field_from_first_argument(
         const std::string& request_json,
         const std::string& field_name);
+
+    static std::optional<float> read_float_field_from_first_argument(
+        const std::string& request_json,
+        const std::string& field_name);
+
+    static std::optional<bool> read_boolean_field_from_first_argument(
+        const std::string& request_json,
+        const std::string& field_name);
 };
 
 }  // namespace soundcloud::bridge
