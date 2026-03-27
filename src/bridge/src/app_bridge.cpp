@@ -72,6 +72,7 @@ std::string serialize_queue_state(
              << bridge_json_codec::escape_string(queue_state.current_track_id)
              << R"(,"currentTrackTitle":)"
              << bridge_json_codec::escape_string(current_track.has_value() ? current_track->title : "")
+             << R"(,"shuffleEnabled":)" << (queue_state.shuffle_enabled ? "true" : "false")
              << R"(,"canPlayPrevious":)" << (queue_state.can_play_previous ? "true" : "false")
              << R"(,"canPlayNext":)" << (queue_state.can_play_next ? "true" : "false")
              << R"(,"queuedTracks":[)";
@@ -159,6 +160,10 @@ std::vector<ui_binding> app_bridge::get_bindings() const {
             .handler = [this](const std::string&) { return build_play_next_track_response(); },
         },
         ui_binding{
+            .name = "toggleShuffle",
+            .handler = [this](const std::string&) { return build_toggle_shuffle_response(); },
+        },
+        ui_binding{
             .name = "pausePlayback",
             .handler = [this](const std::string&) { return build_pause_playback_response(); },
         },
@@ -221,6 +226,7 @@ std::string app_bridge::build_get_playback_state_response() const {
                  << R"(,"trackId":)" << bridge_json_codec::escape_string(queue_state.current_track_id)
                  << R"(,"trackTitle":)"
                  << bridge_json_codec::escape_string(current_track.has_value() ? current_track->title : "")
+                 << R"(,"shuffleEnabled":)" << (queue_state.shuffle_enabled ? "true" : "false")
                  << R"(,"canPlayPrevious":)" << (queue_state.can_play_previous ? "true" : "false")
                  << R"(,"canPlayNext":)" << (queue_state.can_play_next ? "true" : "false")
                  << '}';
@@ -406,6 +412,22 @@ std::string app_bridge::build_play_next_track_response() const {
                  << bridge_json_codec::escape_string(next_track->title)
                  << R"(,"state":"playing"})";
         return response.str();
+    } catch (const std::exception& exception) {
+        return build_error_response(exception.what());
+    }
+}
+
+std::string app_bridge::build_toggle_shuffle_response() const {
+    try {
+        const bool shuffle_enabled = playback_session_.toggle_shuffle();
+        const core::domain::playback_queue_state queue_state = playback_session_.get_queue_state();
+        const std::optional<core::domain::track> current_track =
+            playback_session_.find_known_track(queue_state.current_track_id);
+        if (shuffle_enabled != queue_state.shuffle_enabled) {
+            return build_error_response("Не удалось синхронизировать состояние shuffle.");
+        }
+
+        return serialize_queue_state(queue_state, current_track);
     } catch (const std::exception& exception) {
         return build_error_response(exception.what());
     }

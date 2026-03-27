@@ -13,6 +13,7 @@ namespace soundcloud::core::domain {
 struct playback_queue_state {
     std::string current_track_id;
     std::vector<track> queued_tracks;
+    bool shuffle_enabled = false;
     bool can_play_previous = false;
     bool can_play_next = false;
 };

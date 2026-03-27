@@ -1,6 +1,7 @@
 #include "soundcloud/core/services/playback_session.h"
 
 #include <algorithm>
+#include <random>
 
 namespace soundcloud::core::services {
 
@@ -53,6 +54,9 @@ void playback_session::mark_track_started(const std::string& track_id) {
     // Это делает next/prev стабильными даже если пользователь ушёл на другой экран.
     update_playback_listing_locked(track_id);
     remove_from_queue_locked(track_id);
+    if (shuffle_enabled_) {
+        rebuild_shuffle_upcoming_locked(track_id);
+    }
 
     if (!playback_history_.empty() && playback_history_.back().id == track_id) {
         return;
@@ -67,6 +71,14 @@ std::optional<domain::track> playback_session::peek_next_track() const {
     // Очередь всегда имеет приоритет над автоматическим переходом по списку.
     if (!queued_tracks_.empty()) {
         return queued_tracks_.front();
+    }
+
+    if (shuffle_enabled_) {
+        if (shuffled_upcoming_tracks_.empty()) {
+            return std::nullopt;
+        }
+
+        return shuffled_upcoming_tracks_.front();
     }
 
     if (playback_history_.empty()) {
@@ -106,6 +118,9 @@ void playback_session::commit_previous_track_started() {
     }
 
     playback_history_.pop_back();
+    if (!playback_history_.empty() && shuffle_enabled_) {
+        rebuild_shuffle_upcoming_locked(playback_history_.back().id);
+    }
 }
 
 std::optional<domain::track> playback_session::find_known_track(const std::string& track_id) const {
@@ -119,9 +134,26 @@ domain::playback_queue_state playback_session::get_queue_state() const {
     return domain::playback_queue_state{
         .current_track_id = playback_history_.empty() ? std::string{} : playback_history_.back().id,
         .queued_tracks = queued_tracks_,
+        .shuffle_enabled = shuffle_enabled_,
         .can_play_previous = playback_history_.size() >= 2,
         .can_play_next = has_next_track_locked(),
     };
+}
+
+bool playback_session::toggle_shuffle() {
+    std::scoped_lock lock(state_mutex_);
+    shuffle_enabled_ = !shuffle_enabled_;
+
+    if (!shuffle_enabled_) {
+        shuffled_upcoming_tracks_.clear();
+        return false;
+    }
+
+    if (!playback_history_.empty()) {
+        rebuild_shuffle_upcoming_locked(playback_history_.back().id);
+    }
+
+    return true;
 }
 
 std::optional<domain::track> playback_session::find_known_track_locked(
@@ -164,6 +196,10 @@ bool playback_session::has_next_track_locked() const {
         return true;
     }
 
+    if (shuffle_enabled_) {
+        return !shuffled_upcoming_tracks_.empty();
+    }
+
     if (playback_history_.empty()) {
         return false;
     }
@@ -200,6 +236,27 @@ void playback_session::update_playback_listing_locked(const std::string& track_i
     if (active_track_iterator != active_listing_.end()) {
         playback_listing_ = active_listing_;
     }
+}
+
+void playback_session::rebuild_shuffle_upcoming_locked(const std::string& current_track_id) {
+    shuffled_upcoming_tracks_.clear();
+
+    if (playback_listing_.empty()) {
+        return;
+    }
+
+    for (const domain::track& track : playback_listing_) {
+        if (track.id == current_track_id) {
+            continue;
+        }
+
+        shuffled_upcoming_tracks_.push_back(track);
+    }
+
+    std::shuffle(
+        shuffled_upcoming_tracks_.begin(),
+        shuffled_upcoming_tracks_.end(),
+        random_engine_);
 }
 
 }  // namespace soundcloud::core::services

@@ -467,6 +467,14 @@ h1 {
   transform: translateY(-1px);
 }
 
+.transport-button.is-active {
+  border-color: rgba(107, 232, 244, 0.44);
+  background:
+    linear-gradient(180deg, rgba(107, 232, 244, 0.12), rgba(107, 232, 244, 0.04)),
+    rgba(255, 255, 255, 0.05);
+  color: var(--text);
+}
+
 .primary-button:disabled,
 .secondary-button:disabled,
 .queue-button:disabled,

@@ -52,6 +52,7 @@ private:
     std::string build_play_track_response(const std::string& request_json) const;
     std::string build_play_previous_track_response() const;
     std::string build_play_next_track_response() const;
+    std::string build_toggle_shuffle_response() const;
     std::string build_pause_playback_response() const;
     std::string build_resume_playback_response() const;
     std::string build_seek_playback_response(const std::string& request_json) const;

@@ -289,7 +289,10 @@ public:
         pending_request_token_ = request_token;
         current_stream_url_.clear();
         media_item_ready_ = false;
-        should_start_playback_when_ready_ = false;
+        // Для сценария "загрузи новый трек и сразу воспроизведи его" считаем
+        // autoplay намерением по умолчанию. Это защищает transport-switch от гонки,
+        // где ready-event может прийти раньше явного play() вызова.
+        should_start_playback_when_ready_ = true;
         playback_state_.status = core::domain::playback_status::loading;
         playback_state_.stream_url = stream_url;
         playback_state_.error_message.clear();

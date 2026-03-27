@@ -2,6 +2,7 @@
 
 #include <mutex>
 #include <optional>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -64,6 +65,11 @@ public:
      */
     [[nodiscard]] domain::playback_queue_state get_queue_state() const;
 
+    /**
+     * Переключает shuffle-режим для playback listing и возвращает его новое состояние.
+     */
+    [[nodiscard]] bool toggle_shuffle();
+
 private:
     /**
      * Внутренний lookup по всем локальным спискам session-state.
@@ -88,6 +94,12 @@ private:
      * Это отделяет "что пользователь сейчас видит" от "по какому списку идёт playback".
      */
     void update_playback_listing_locked(const std::string& track_id);
+
+    /**
+     * Перестраивает случайный порядок следующих треков относительно текущего трека.
+     * Очередь при этом не трогается: она по-прежнему имеет более высокий приоритет.
+     */
+    void rebuild_shuffle_upcoming_locked(const std::string& current_track_id);
 
     /**
      * Защищает всё mutable session-state сервиса:
@@ -117,6 +129,22 @@ private:
      * Используется для current track и navigation назад через Prev.
      */
     std::vector<domain::track> playback_history_;
+
+    /**
+     * Флаг shuffle-режима для playback listing.
+     */
+    bool shuffle_enabled_ = false;
+
+    /**
+     * Предвычисленный случайный порядок следующих треков для auto-next и кнопки Next.
+     */
+    std::vector<domain::track> shuffled_upcoming_tracks_;
+
+    /**
+     * Генератор случайного порядка сохраняется на уровне сессии,
+     * чтобы shuffle не пересоздавался на каждый вызов Next.
+     */
+    mutable std::mt19937 random_engine_{std::random_device{}()};
 };
 
 }  // namespace soundcloud::core::services
