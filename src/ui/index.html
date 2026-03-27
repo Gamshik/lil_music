@@ -36,6 +36,9 @@
         <button class="tab-button" type="button" data-tab-target="queue" aria-selected="false">
           Очередь
         </button>
+        <button class="tab-button" type="button" data-tab-target="equalizer" aria-selected="false">
+          Эквалайзер
+        </button>
       </nav>
 
       <section class="player-shell">
@@ -198,6 +201,62 @@
           </p>
 
           <ul id="queue-list" class="queue-list"></ul>
+        </section>
+
+        <section class="tab-panel" data-tab-panel="equalizer" hidden>
+          <div class="section-head section-head-eq">
+            <div>
+              <p class="section-kicker">Эквалайзер</p>
+              <h1>Настрой звук под себя</h1>
+            </div>
+
+            <div class="eq-toolbar">
+              <span id="equalizer-status-pill" class="status-pill">Загрузка EQ...</span>
+              <button id="equalizer-reset-button" class="secondary-button" type="button">Reset</button>
+            </div>
+          </div>
+
+          <p id="equalizer-summary" class="section-summary">
+            Эквалайзер применяет реальные DSP-настройки к текущему audio engine.
+          </p>
+
+          <section class="equalizer-shell" aria-labelledby="equalizer-heading">
+            <div class="equalizer-surface">
+              <div class="equalizer-topline">
+                <div class="equalizer-copy">
+                  <p class="field-label">Master EQ</p>
+                  <strong id="equalizer-active-preset" class="equalizer-preset-title">Flat</strong>
+                  <p id="equalizer-headroom" class="equalizer-meta">Level: 0.0 dB · Auto headroom: 0.0 dB</p>
+                </div>
+
+                <div class="equalizer-master">
+                  <span id="equalizer-status-detail" class="equalizer-status-detail">Ожидание audio engine...</span>
+                  <button
+                    id="equalizer-toggle-button"
+                    class="equalizer-toggle-switch"
+                    type="button"
+                    aria-pressed="false"
+                    aria-label="Включить или выключить эквалайзер"
+                    title="Включить или выключить эквалайзер"
+                  >
+                    <span class="equalizer-toggle-switch-thumb" aria-hidden="true"></span>
+                  </button>
+                </div>
+              </div>
+
+              <div id="equalizer-presets" class="equalizer-presets" role="list" aria-label="Пресеты эквалайзера"></div>
+
+              <div class="equalizer-stage" aria-label="Полосы эквалайзера">
+                <div class="equalizer-scale" aria-hidden="true">
+                  <span>12 dB</span>
+                  <span>0 dB</span>
+                  <span>-12 dB</span>
+                </div>
+
+                <div id="equalizer-bands" class="equalizer-bands"></div>
+              </div>
+            </div>
+          </section>
         </section>
       </section>
     </main>

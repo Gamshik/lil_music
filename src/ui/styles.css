@@ -780,6 +780,299 @@ h1 {
   font-size: 0.88rem;
 }
 
+.section-head-eq {
+  align-items: start;
+}
+
+.eq-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: var(--radius-pill);
+  border: 1px solid rgba(107, 232, 244, 0.18);
+  background: rgba(107, 232, 244, 0.07);
+  color: var(--muted-strong);
+  font-size: 0.84rem;
+}
+
+.equalizer-shell {
+  margin-top: 18px;
+}
+
+.equalizer-surface {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 18px;
+}
+
+.equalizer-topline {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: start;
+}
+
+.equalizer-copy {
+  min-width: 0;
+}
+
+.equalizer-master {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.equalizer-toggle-switch {
+  position: relative;
+  width: 52px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.02)),
+    rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  transition:
+    background 180ms ease,
+    transform 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.equalizer-toggle-switch:hover {
+  transform: translateY(-1px);
+}
+
+.equalizer-toggle-switch[aria-pressed="true"] {
+  background: linear-gradient(135deg, #f7f06f, #e1d610);
+  box-shadow: 0 0 0 1px rgba(247, 240, 111, 0.2);
+}
+
+.equalizer-toggle-switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #121318;
+  transition: transform 180ms ease;
+}
+
+.equalizer-toggle-switch[aria-pressed="true"] .equalizer-toggle-switch-thumb {
+  transform: translateX(22px);
+}
+
+.equalizer-preset-title {
+  display: block;
+  margin-top: 2px;
+  font-size: 1.24rem;
+}
+
+.equalizer-meta,
+.equalizer-status-detail {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.equalizer-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.equalizer-preset-button {
+  min-height: 34px;
+  padding: 0 13px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line-strong);
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    transform 180ms ease,
+    opacity 180ms ease;
+}
+
+.equalizer-preset-button:hover {
+  transform: translateY(-1px);
+}
+
+.equalizer-preset-button.is-active {
+  border-color: rgba(247, 240, 111, 0.48);
+  background:
+    linear-gradient(180deg, rgba(247, 240, 111, 0.15), rgba(247, 240, 111, 0.04)),
+    rgba(255, 255, 255, 0.05);
+}
+
+.equalizer-preset-button.is-derived {
+  border-style: dashed;
+}
+
+.equalizer-preset-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.equalizer-stage {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 20px;
+  align-items: stretch;
+  margin-top: 24px;
+}
+
+.equalizer-scale {
+  display: grid;
+  align-content: space-between;
+  padding: 4px 0 18px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.equalizer-bands {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 280px;
+}
+
+.equalizer-band {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  min-width: 28px;
+  flex: 1 1 0;
+}
+
+.equalizer-band-frequency {
+  order: 3;
+  color: var(--muted-strong);
+  font-size: 0.82rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.equalizer-band-value {
+  order: 1;
+  color: var(--paper);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  min-height: 1.2em;
+  opacity: 0.82;
+}
+
+.equalizer-slider {
+  position: relative;
+  order: 2;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  width: 100%;
+  outline: none;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+}
+
+.equalizer-slider:focus-visible .equalizer-slider-track {
+  box-shadow:
+    inset 0 0 0 1px rgba(247, 240, 111, 0.44),
+    0 0 0 4px rgba(247, 240, 111, 0.08);
+}
+
+.equalizer-slider.is-disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.equalizer-slider.is-dragging,
+.equalizer-slider:hover {
+  cursor: grabbing;
+}
+
+.equalizer-slider-track {
+  position: relative;
+  width: 100%;
+  max-width: 22px;
+  height: 210px;
+  display: flex;
+  justify-content: center;
+}
+
+.equalizer-slider-rail,
+.equalizer-slider-zero-line {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.equalizer-slider-rail {
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.equalizer-slider-zero-line {
+  top: 50%;
+  width: 16px;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.equalizer-slider-fill {
+  position: absolute;
+  left: 50%;
+  width: 2px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(247, 240, 111, 0.95), rgba(247, 240, 111, 0.75));
+  transform: translateX(-50%);
+  pointer-events: none;
+  opacity: 0.92;
+}
+
+.equalizer-slider-thumb {
+  position: absolute;
+  left: 50%;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(247, 240, 111, 0.96);
+  background: #1b1d22;
+  box-shadow:
+    0 0 0 4px rgba(247, 240, 111, 0.08),
+    0 8px 18px rgba(0, 0, 0, 0.26);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.equalizer-slider.is-output .equalizer-slider-thumb {
+  border-color: rgba(239, 196, 106, 0.96);
+}
+
+.equalizer-slider.is-output .equalizer-slider-fill {
+  background: linear-gradient(180deg, rgba(239, 196, 106, 0.95), rgba(255, 143, 77, 0.78));
+}
+
 @keyframes panel-fade {
   from {
     opacity: 0;
@@ -832,6 +1125,26 @@ h1 {
   .volume-control {
     grid-template-columns: auto minmax(0, 1fr) auto;
   }
+
+  .equalizer-stage {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .equalizer-scale {
+    grid-auto-flow: column;
+    justify-content: space-between;
+    padding: 0;
+  }
+
+  .equalizer-bands {
+    overflow-x: auto;
+    padding-bottom: 8px;
+  }
+
+  .equalizer-band {
+    min-width: 38px;
+  }
 }
 
 @media (max-width: 720px) {
@@ -881,5 +1194,18 @@ h1 {
 
   .volume-control {
     width: 100%;
+  }
+
+  .equalizer-topline {
+    display: grid;
+    gap: 14px;
+  }
+
+  .equalizer-master {
+    justify-content: space-between;
+  }
+
+  .equalizer-presets {
+    gap: 8px;
   }
 }

@@ -27,6 +27,15 @@ const volumeValueElement = document.getElementById("volume-value");
 const loadFeaturedButtonElement = document.getElementById("load-featured-button");
 const queueCountElement = document.getElementById("queue-count");
 const queueListElement = document.getElementById("queue-list");
+const equalizerSummaryElement = document.getElementById("equalizer-summary");
+const equalizerStatusPillElement = document.getElementById("equalizer-status-pill");
+const equalizerStatusDetailElement = document.getElementById("equalizer-status-detail");
+const equalizerActivePresetElement = document.getElementById("equalizer-active-preset");
+const equalizerHeadroomElement = document.getElementById("equalizer-headroom");
+const equalizerToggleButtonElement = document.getElementById("equalizer-toggle-button");
+const equalizerResetButtonElement = document.getElementById("equalizer-reset-button");
+const equalizerPresetsElement = document.getElementById("equalizer-presets");
+const equalizerBandsElement = document.getElementById("equalizer-bands");
 const tabButtonElements = Array.from(document.querySelectorAll("[data-tab-target]"));
 const tabPanelElements = Array.from(document.querySelectorAll("[data-tab-panel]"));
 const pageRootElement = document.body;
@@ -56,6 +65,16 @@ let latestQueueState = {
   canPlayPrevious: false,
   canPlayNext: false,
 };
+let latestEqualizerState = {
+  status: "loading",
+  enabled: false,
+  activePresetId: "flat",
+  outputGainDb: 0,
+  headroomCompensationDb: 0,
+  errorMessage: "",
+  bands: [],
+  presets: [],
+};
 let previousPlaybackState = null;
 let isAutoAdvancing = false;
 let isStartingPlayback = false;
@@ -66,6 +85,10 @@ let isProgressDragging = false;
 let progressDragRatio = 0;
 let progressDragPointerId = null;
 let volumeSyncTimer = null;
+let outputGainSyncTimer = null;
+const equalizerBandSyncTimers = new Map();
+let equalizerDragPointerId = null;
+let equalizerDragElement = null;
 
 function normalizeBridgePayload(payload) {
   // Bridge может вернуть как уже распарсенный объект, так и JSON-строку.
@@ -176,6 +199,269 @@ function setRepeatMode(repeatMode) {
     repeatButtonElement.title = "Повтор выключен";
     repeatBadgeElement.textContent = "";
   }
+}
+
+function mapEqualizerStatusLabel(status) {
+  switch (status) {
+    case "ready":
+      return "EQ готов";
+    case "unsupported_audio_path":
+      return "Неподдерживаемый audio path";
+    case "audio_engine_unavailable":
+      return "Audio engine недоступен";
+    case "error":
+      return "Ошибка EQ";
+    default:
+      return "Загрузка EQ...";
+  }
+}
+
+function getEqualizerPresetTitle(presetId) {
+  const matchingPreset = latestEqualizerState.presets.find((preset) => preset.id === presetId);
+  return matchingPreset?.title || "Flat";
+}
+
+function formatEqualizerGainDb(gainDb) {
+  const safeGainDb = Number(gainDb) || 0;
+  return `${safeGainDb > 0 ? "+" : ""}${safeGainDb.toFixed(1)} dB`;
+}
+
+function formatEqualizerFrequencyLabel(centerFrequencyHz) {
+  const safeFrequencyHz = Number(centerFrequencyHz) || 0;
+  if (safeFrequencyHz >= 1000) {
+    const valueInKhz = safeFrequencyHz / 1000;
+    return `${Number.isInteger(valueInKhz) ? valueInKhz.toFixed(0) : valueInKhz.toFixed(1)}k`;
+  }
+
+  return `${Math.round(safeFrequencyHz)}`;
+}
+
+function clampEqualizerGainDb(gainDb) {
+  return Math.max(-12, Math.min(12, Math.round((Number(gainDb) || 0) * 2) / 2));
+}
+
+function deriveEqualizerPresetIdFromCurrentBands() {
+  const matchingPreset = latestEqualizerState.presets.find((preset) => {
+    if (preset.id === "custom" || !Array.isArray(preset.gainsDb)) {
+      return false;
+    }
+
+    return preset.gainsDb.every((gainDb, index) => {
+      const band = latestEqualizerState.bands[index];
+      return band && Math.abs((Number(band.gainDb) || 0) - (Number(gainDb) || 0)) < 0.01;
+    });
+  });
+
+  return matchingPreset?.id || "custom";
+}
+
+function setEqualizerStatusSummary() {
+  const statusLabel = mapEqualizerStatusLabel(latestEqualizerState.status);
+  equalizerStatusPillElement.textContent = statusLabel;
+  equalizerStatusDetailElement.textContent =
+    latestEqualizerState.errorMessage ||
+    (latestEqualizerState.status === "ready"
+      ? "DSP активен в native audio engine."
+      : "Состояние EQ синхронизируется с native backend.");
+  equalizerActivePresetElement.textContent = getEqualizerPresetTitle(
+    latestEqualizerState.activePresetId,
+  );
+  equalizerHeadroomElement.textContent = `Level: ${formatEqualizerGainDb(
+    latestEqualizerState.outputGainDb,
+  )} · Auto headroom: ${formatEqualizerGainDb(latestEqualizerState.headroomCompensationDb)}`;
+
+  if (latestEqualizerState.status === "ready") {
+    equalizerSummaryElement.textContent = latestEqualizerState.enabled
+      ? "Эквалайзер включён: полосы меняют частоты, а Level регулирует общий уровень обработанного сигнала."
+      : "Эквалайзер выключен, но все полосы и Level сохранены и готовы к повторному включению.";
+  } else if (latestEqualizerState.status === "unsupported_audio_path") {
+    equalizerSummaryElement.textContent =
+      latestEqualizerState.errorMessage ||
+      "Текущий audio path не поддерживает DSP-цепочку эквалайзера.";
+  } else if (latestEqualizerState.status === "audio_engine_unavailable") {
+    equalizerSummaryElement.textContent =
+      latestEqualizerState.errorMessage ||
+      "Native audio engine временно недоступен. Попробуй повторить после восстановления устройства.";
+  } else if (latestEqualizerState.status === "error") {
+    equalizerSummaryElement.textContent =
+      latestEqualizerState.errorMessage || "Не удалось применить состояние эквалайзера.";
+  } else {
+    equalizerSummaryElement.textContent = "Эквалайзер инициализируется...";
+  }
+}
+
+function applyEqualizerSliderVisualState(sliderElement, gainDb) {
+  const safeGainDb = clampEqualizerGainDb(gainDb);
+  const normalized = (12 - safeGainDb) / 24;
+  const thumbTopPercent = Math.max(0, Math.min(100, normalized * 100));
+  const fillElement = sliderElement.querySelector(".equalizer-slider-fill");
+  const thumbElement = sliderElement.querySelector(".equalizer-slider-thumb");
+  const valueElement = sliderElement.closest(".equalizer-band")?.querySelector(".equalizer-band-value");
+  const sliderLabel = sliderElement.dataset.sliderLabel || "Эквалайзер";
+
+  sliderElement.dataset.valueDb = String(safeGainDb);
+  sliderElement.setAttribute("aria-label", `${sliderLabel}, ${formatEqualizerGainDb(safeGainDb)}`);
+  sliderElement.setAttribute("aria-valuenow", safeGainDb.toFixed(1));
+  sliderElement.setAttribute("aria-valuetext", formatEqualizerGainDb(safeGainDb));
+
+  if (valueElement) {
+    valueElement.textContent = formatEqualizerGainDb(safeGainDb);
+  }
+
+  if (thumbElement) {
+    thumbElement.style.top = `${thumbTopPercent}%`;
+  }
+
+  if (fillElement) {
+    if (safeGainDb >= 0) {
+      fillElement.style.top = `${thumbTopPercent}%`;
+      fillElement.style.height = `${50 - thumbTopPercent}%`;
+    } else {
+      fillElement.style.top = "50%";
+      fillElement.style.height = `${thumbTopPercent - 50}%`;
+    }
+  }
+}
+
+function syncEqualizerPresetButtons() {
+  const presetButtonElements = equalizerPresetsElement.querySelectorAll(".equalizer-preset-button");
+  presetButtonElements.forEach((presetButtonElement) => {
+    const isActive = presetButtonElement.dataset.presetId === latestEqualizerState.activePresetId;
+    presetButtonElement.classList.toggle("is-active", isActive);
+    presetButtonElement.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+}
+
+function createEqualizerSliderElement({ kind, label, valueDb, bandIndex, controlsEnabled }) {
+  const bandElement = document.createElement("div");
+  bandElement.className = "equalizer-band";
+
+  const valueElement = document.createElement("span");
+  valueElement.className = "equalizer-band-value";
+
+  const sliderElement = document.createElement("div");
+  sliderElement.className = `equalizer-slider${kind === "output" ? " is-output" : ""}${
+    controlsEnabled ? "" : " is-disabled"
+  }`;
+  sliderElement.dataset.action = "equalizer-slider";
+  sliderElement.dataset.sliderKind = kind;
+  if (typeof bandIndex === "number") {
+    sliderElement.dataset.bandIndex = String(bandIndex);
+  }
+  sliderElement.dataset.sliderLabel = label;
+  sliderElement.tabIndex = controlsEnabled ? 0 : -1;
+  sliderElement.setAttribute("role", "slider");
+  sliderElement.setAttribute("aria-valuemin", "-12");
+  sliderElement.setAttribute("aria-valuemax", "12");
+
+  const trackElement = document.createElement("div");
+  trackElement.className = "equalizer-slider-track";
+
+  const railElement = document.createElement("div");
+  railElement.className = "equalizer-slider-rail";
+
+  const zeroLineElement = document.createElement("div");
+  zeroLineElement.className = "equalizer-slider-zero-line";
+
+  const fillElement = document.createElement("div");
+  fillElement.className = "equalizer-slider-fill";
+
+  const thumbElement = document.createElement("div");
+  thumbElement.className = "equalizer-slider-thumb";
+  thumbElement.setAttribute("aria-hidden", "true");
+
+  const labelElement = document.createElement("span");
+  labelElement.className = "equalizer-band-frequency";
+  labelElement.textContent = label;
+
+  trackElement.append(railElement, zeroLineElement, fillElement, thumbElement);
+  bandElement.append(valueElement, sliderElement, labelElement);
+  sliderElement.append(trackElement);
+  applyEqualizerSliderVisualState(sliderElement, valueDb);
+  return bandElement;
+}
+
+function renderEqualizer() {
+  const controlsEnabled = latestEqualizerState.status === "ready";
+  equalizerToggleButtonElement.disabled = !controlsEnabled;
+  equalizerToggleButtonElement.setAttribute(
+    "aria-pressed",
+    latestEqualizerState.enabled ? "true" : "false",
+  );
+  equalizerResetButtonElement.disabled = !controlsEnabled;
+  setEqualizerStatusSummary();
+
+  equalizerPresetsElement.replaceChildren();
+  latestEqualizerState.presets.forEach((preset) => {
+    const presetButtonElement = document.createElement("button");
+    presetButtonElement.className = "equalizer-preset-button";
+    presetButtonElement.type = "button";
+    presetButtonElement.dataset.action = "select-equalizer-preset";
+    presetButtonElement.dataset.presetId = preset.id;
+    presetButtonElement.textContent = preset.title;
+    presetButtonElement.disabled = !controlsEnabled || preset.id === "custom";
+    presetButtonElement.classList.toggle(
+      "is-active",
+      preset.id === latestEqualizerState.activePresetId,
+    );
+    presetButtonElement.classList.toggle("is-derived", preset.id === "custom");
+    presetButtonElement.setAttribute(
+      "aria-pressed",
+      preset.id === latestEqualizerState.activePresetId ? "true" : "false",
+    );
+    equalizerPresetsElement.append(presetButtonElement);
+  });
+
+  equalizerBandsElement.replaceChildren();
+  equalizerBandsElement.append(
+    createEqualizerSliderElement({
+      kind: "output",
+      label: "level",
+      valueDb: latestEqualizerState.outputGainDb,
+      controlsEnabled,
+    }),
+  );
+
+  latestEqualizerState.bands.forEach((band) => {
+    equalizerBandsElement.append(
+      createEqualizerSliderElement({
+        kind: "band",
+        label: formatEqualizerFrequencyLabel(band.centerFrequencyHz),
+        valueDb: band.gainDb,
+        bandIndex: band.index,
+        controlsEnabled,
+      }),
+    );
+  });
+
+  syncEqualizerPresetButtons();
+}
+
+function applyEqualizerStateSnapshot(snapshot) {
+  latestEqualizerState = {
+    status: snapshot.status || latestEqualizerState.status || "loading",
+    enabled: Boolean(snapshot.enabled),
+    activePresetId: snapshot.activePresetId || latestEqualizerState.activePresetId || "flat",
+    outputGainDb:
+      typeof snapshot.outputGainDb === "number"
+        ? snapshot.outputGainDb
+        : latestEqualizerState.outputGainDb || 0,
+    headroomCompensationDb:
+      typeof snapshot.headroomCompensationDb === "number"
+        ? snapshot.headroomCompensationDb
+        : latestEqualizerState.headroomCompensationDb || 0,
+    errorMessage: snapshot.errorMessage || "",
+    bands: Array.isArray(snapshot.bands) ? snapshot.bands : latestEqualizerState.bands || [],
+    presets: Array.isArray(snapshot.presets) ? snapshot.presets : latestEqualizerState.presets || [],
+  };
+
+  if (equalizerDragPointerId !== null) {
+    setEqualizerStatusSummary();
+    syncEqualizerPresetButtons();
+    return;
+  }
+
+  renderEqualizer();
 }
 
 function canSeekPlayback() {
@@ -1055,6 +1341,172 @@ async function applyVolumeChange(volumePercent) {
   setVolumeLevel(latestPlaybackState.volumePercent);
 }
 
+async function refreshEqualizerState() {
+  if (typeof window.getEqualizerState !== "function") {
+    return;
+  }
+
+  const response = normalizeBridgePayload(await window.getEqualizerState());
+  if (response?.ok === false) {
+    throw new Error(response.message || "Не удалось получить состояние эквалайзера.");
+  }
+
+  applyEqualizerStateSnapshot(response);
+}
+
+async function applyEqualizerEnabled(enabled) {
+  if (typeof window.setEqualizerEnabled !== "function") {
+    return;
+  }
+
+  const response = normalizeBridgePayload(await window.setEqualizerEnabled({ enabled }));
+  if (response?.ok === false) {
+    throw new Error(response.message || "Не удалось изменить состояние эквалайзера.");
+  }
+
+  applyEqualizerStateSnapshot(response);
+}
+
+async function applyEqualizerPreset(presetId) {
+  if (typeof window.selectEqualizerPreset !== "function") {
+    return;
+  }
+
+  const response = normalizeBridgePayload(await window.selectEqualizerPreset({ presetId }));
+  if (response?.ok === false) {
+    throw new Error(response.message || "Не удалось применить пресет эквалайзера.");
+  }
+
+  applyEqualizerStateSnapshot(response);
+}
+
+async function applyEqualizerBandGain(bandIndex, gainDb) {
+  if (typeof window.setEqualizerBandGain !== "function") {
+    return;
+  }
+
+  const response = normalizeBridgePayload(
+    await window.setEqualizerBandGain({
+      bandIndex,
+      gainDb,
+    }),
+  );
+  if (response?.ok === false) {
+    throw new Error(response.message || "Не удалось изменить полосу эквалайзера.");
+  }
+
+  applyEqualizerStateSnapshot(response);
+}
+
+async function applyEqualizerOutputGain(outputGainDb) {
+  if (typeof window.setEqualizerOutputGain !== "function") {
+    return;
+  }
+
+  const response = normalizeBridgePayload(
+    await window.setEqualizerOutputGain({
+      outputGainDb,
+    }),
+  );
+  if (response?.ok === false) {
+    throw new Error(response.message || "Не удалось изменить общий уровень эквалайзера.");
+  }
+
+  applyEqualizerStateSnapshot(response);
+}
+
+async function requestEqualizerReset() {
+  if (typeof window.resetEqualizer !== "function") {
+    return;
+  }
+
+  const response = normalizeBridgePayload(await window.resetEqualizer());
+  if (response?.ok === false) {
+    throw new Error(response.message || "Не удалось сбросить эквалайзер.");
+  }
+
+  applyEqualizerStateSnapshot(response);
+}
+
+function scheduleEqualizerBandSync(bandIndex, gainDb) {
+  const existingTimer = equalizerBandSyncTimers.get(bandIndex);
+  if (existingTimer) {
+    window.clearTimeout(existingTimer);
+  }
+
+  const timerId = window.setTimeout(() => {
+    equalizerBandSyncTimers.delete(bandIndex);
+    void applyEqualizerBandGain(bandIndex, gainDb).catch((error) => {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      setPlaybackStatus("Ошибка EQ", errorMessage);
+    });
+  }, 70);
+
+  equalizerBandSyncTimers.set(bandIndex, timerId);
+}
+
+function scheduleEqualizerOutputGainSync(outputGainDb) {
+  if (outputGainSyncTimer !== null) {
+    window.clearTimeout(outputGainSyncTimer);
+  }
+
+  outputGainSyncTimer = window.setTimeout(() => {
+    outputGainSyncTimer = null;
+    void applyEqualizerOutputGain(outputGainDb).catch((error) => {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      setPlaybackStatus("Ошибка EQ", errorMessage);
+    });
+  }, 70);
+}
+
+function cancelPendingEqualizerSync() {
+  if (outputGainSyncTimer !== null) {
+    window.clearTimeout(outputGainSyncTimer);
+    outputGainSyncTimer = null;
+  }
+
+  equalizerBandSyncTimers.forEach((timerId) => {
+    window.clearTimeout(timerId);
+  });
+  equalizerBandSyncTimers.clear();
+}
+
+function updateLocalEqualizerBandValue(bandIndex, gainDb) {
+  const safeGainDb = clampEqualizerGainDb(gainDb);
+  latestEqualizerState.bands = latestEqualizerState.bands.map((band) =>
+    band.index === bandIndex
+      ? { ...band, gainDb: safeGainDb }
+      : band,
+  );
+  latestEqualizerState.activePresetId = deriveEqualizerPresetIdFromCurrentBands();
+  setEqualizerStatusSummary();
+  syncEqualizerPresetButtons();
+
+  const sliderElement = equalizerBandsElement.querySelector(
+    `.equalizer-slider[data-slider-kind="band"][data-band-index="${bandIndex}"]`,
+  );
+  if (sliderElement) {
+    applyEqualizerSliderVisualState(sliderElement, safeGainDb);
+  }
+
+  scheduleEqualizerBandSync(bandIndex, safeGainDb);
+}
+
+function updateLocalEqualizerOutputGain(gainDb) {
+  const safeGainDb = clampEqualizerGainDb(gainDb);
+  latestEqualizerState.outputGainDb = safeGainDb;
+  setEqualizerStatusSummary();
+
+  const sliderElement = equalizerBandsElement.querySelector(
+    `.equalizer-slider[data-slider-kind="output"]`,
+  );
+  if (sliderElement) {
+    applyEqualizerSliderVisualState(sliderElement, safeGainDb);
+  }
+
+  scheduleEqualizerOutputGainSync(safeGainDb);
+}
+
 function handleVolumeInput(event) {
   const nextVolumePercent = Number.parseInt(event.target.value, 10) || 0;
   setVolumeLevel(nextVolumePercent);
@@ -1136,6 +1588,189 @@ async function handleRepeatToggle() {
   }
 }
 
+async function handleEqualizerToggle() {
+  try {
+    cancelPendingEqualizerSync();
+    await applyEqualizerEnabled(!latestEqualizerState.enabled);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    setPlaybackStatus("Ошибка EQ", errorMessage);
+  }
+}
+
+async function handleEqualizerPresetClick(event) {
+  const presetButtonElement = event.target.closest("[data-action='select-equalizer-preset']");
+  if (!presetButtonElement) {
+    return;
+  }
+
+  const presetId = presetButtonElement.dataset.presetId || "";
+  try {
+    cancelPendingEqualizerSync();
+    await applyEqualizerPreset(presetId);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    setPlaybackStatus("Ошибка EQ", errorMessage);
+  }
+}
+
+function getEqualizerSliderGainFromClientY(sliderElement, clientY) {
+  const trackElement = sliderElement.querySelector(".equalizer-slider-track");
+  if (!trackElement) {
+    return 0;
+  }
+
+  const trackRect = trackElement.getBoundingClientRect();
+  if (trackRect.height <= 0) {
+    return 0;
+  }
+
+  const ratio = Math.min(1, Math.max(0, (clientY - trackRect.top) / trackRect.height));
+  return clampEqualizerGainDb(12 - ratio * 24);
+}
+
+function previewEqualizerSliderValue(sliderElement, gainDb) {
+  const sliderKind = sliderElement.dataset.sliderKind || "band";
+  if (sliderKind === "output") {
+    updateLocalEqualizerOutputGain(gainDb);
+    return;
+  }
+
+  const bandIndex = Number.parseInt(sliderElement.dataset.bandIndex || "", 10);
+  if (Number.isNaN(bandIndex)) {
+    return;
+  }
+
+  updateLocalEqualizerBandValue(bandIndex, gainDb);
+}
+
+async function commitEqualizerSliderValue(sliderElement) {
+  const sliderKind = sliderElement.dataset.sliderKind || "band";
+  const gainDb = clampEqualizerGainDb(Number.parseFloat(sliderElement.dataset.valueDb || "0"));
+
+  try {
+    if (sliderKind === "output") {
+      if (outputGainSyncTimer !== null) {
+        window.clearTimeout(outputGainSyncTimer);
+        outputGainSyncTimer = null;
+      }
+
+      await applyEqualizerOutputGain(gainDb);
+      return;
+    }
+
+    const bandIndex = Number.parseInt(sliderElement.dataset.bandIndex || "", 10);
+    if (Number.isNaN(bandIndex)) {
+      return;
+    }
+
+    const existingTimer = equalizerBandSyncTimers.get(bandIndex);
+    if (existingTimer) {
+      window.clearTimeout(existingTimer);
+      equalizerBandSyncTimers.delete(bandIndex);
+    }
+
+    await applyEqualizerBandGain(bandIndex, gainDb);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    setPlaybackStatus("Ошибка EQ", errorMessage);
+  }
+}
+
+function finishEqualizerDragging() {
+  if (equalizerDragElement) {
+    equalizerDragElement.classList.remove("is-dragging");
+  }
+
+  equalizerDragPointerId = null;
+  equalizerDragElement = null;
+}
+
+function handleEqualizerSliderPointerDown(event) {
+  const sliderElement = event.target.closest("[data-action='equalizer-slider']");
+  if (!sliderElement || sliderElement.classList.contains("is-disabled")) {
+    return;
+  }
+
+  event.preventDefault();
+  equalizerDragPointerId = event.pointerId;
+  equalizerDragElement = sliderElement;
+  sliderElement.classList.add("is-dragging");
+  sliderElement.setPointerCapture(event.pointerId);
+  previewEqualizerSliderValue(sliderElement, getEqualizerSliderGainFromClientY(sliderElement, event.clientY));
+}
+
+function handleEqualizerSliderPointerMove(event) {
+  if (!equalizerDragElement || event.pointerId !== equalizerDragPointerId) {
+    return;
+  }
+
+  previewEqualizerSliderValue(
+    equalizerDragElement,
+    getEqualizerSliderGainFromClientY(equalizerDragElement, event.clientY),
+  );
+}
+
+function handleEqualizerSliderPointerCancel(event) {
+  if (!equalizerDragElement || event.pointerId !== equalizerDragPointerId) {
+    return;
+  }
+
+  if (equalizerDragElement.hasPointerCapture(event.pointerId)) {
+    equalizerDragElement.releasePointerCapture(event.pointerId);
+  }
+
+  finishEqualizerDragging();
+  renderEqualizer();
+}
+
+async function handleEqualizerSliderPointerUp(event) {
+  if (!equalizerDragElement || event.pointerId !== equalizerDragPointerId) {
+    return;
+  }
+
+  const sliderElement = equalizerDragElement;
+  if (sliderElement.hasPointerCapture(event.pointerId)) {
+    sliderElement.releasePointerCapture(event.pointerId);
+  }
+
+  finishEqualizerDragging();
+  await commitEqualizerSliderValue(sliderElement);
+}
+
+function handleEqualizerSliderKeyDown(event) {
+  const sliderElement = event.target.closest("[data-action='equalizer-slider']");
+  if (!sliderElement || sliderElement.classList.contains("is-disabled")) {
+    return;
+  }
+
+  const currentValue = clampEqualizerGainDb(Number.parseFloat(sliderElement.dataset.valueDb || "0"));
+  let nextValue = currentValue;
+
+  switch (event.key) {
+    case "ArrowUp":
+    case "ArrowRight":
+      nextValue = currentValue + 0.5;
+      break;
+    case "ArrowDown":
+    case "ArrowLeft":
+      nextValue = currentValue - 0.5;
+      break;
+    case "Home":
+      nextValue = 12;
+      break;
+    case "End":
+      nextValue = -12;
+      break;
+    default:
+      return;
+  }
+
+  event.preventDefault();
+  previewEqualizerSliderValue(sliderElement, nextValue);
+  void commitEqualizerSliderValue(sliderElement);
+}
+
 function startPlaybackPolling() {
   if (playbackPollingTimer !== null) {
     clearInterval(playbackPollingTimer);
@@ -1158,6 +1793,7 @@ async function initializePage() {
   setShuffleState(false);
   setRepeatMode("none");
   setPlaybackVisualState("idle");
+  renderEqualizer();
   setActiveTab(activeTabId);
   renderFeaturedTracks([], "Здесь появятся популярные треки.");
   renderTracks([], "Результаты поиска появятся здесь.");
@@ -1170,6 +1806,12 @@ async function initializePage() {
 
   await refreshQueueState();
   await refreshPlaybackState();
+  try {
+    await refreshEqualizerState();
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    equalizerSummaryElement.textContent = `Не удалось инициализировать эквалайзер: ${errorMessage}`;
+  }
   window.setTimeout(() => {
     void loadFeaturedTracks();
   }, 50);
@@ -1195,6 +1837,26 @@ shuffleButtonElement.addEventListener("click", () => {
 repeatButtonElement.addEventListener("click", () => {
   void handleRepeatToggle();
 });
+equalizerToggleButtonElement.addEventListener("click", () => {
+  void handleEqualizerToggle();
+});
+equalizerResetButtonElement.addEventListener("click", () => {
+  cancelPendingEqualizerSync();
+  void requestEqualizerReset().catch((error) => {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    setPlaybackStatus("Ошибка EQ", errorMessage);
+  });
+});
+equalizerPresetsElement.addEventListener("click", (event) => {
+  void handleEqualizerPresetClick(event);
+});
+equalizerBandsElement.addEventListener("pointerdown", handleEqualizerSliderPointerDown);
+equalizerBandsElement.addEventListener("pointermove", handleEqualizerSliderPointerMove);
+equalizerBandsElement.addEventListener("pointerup", (event) => {
+  void handleEqualizerSliderPointerUp(event);
+});
+equalizerBandsElement.addEventListener("pointercancel", handleEqualizerSliderPointerCancel);
+equalizerBandsElement.addEventListener("keydown", handleEqualizerSliderKeyDown);
 playbackToggleButtonElement.addEventListener("click", () => {
   void handlePlaybackToggle();
 });
