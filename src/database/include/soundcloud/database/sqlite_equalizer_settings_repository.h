@@ -16,8 +16,14 @@ class sqlite_equalizer_settings_repository final
 public:
     explicit sqlite_equalizer_settings_repository(std::filesystem::path database_file_path);
 
+    /**
+     * Возвращает сохранённый EQ snapshot из локальной SQLite-базы, если он есть.
+     */
     [[nodiscard]] std::optional<core::domain::equalizer_state> load_equalizer_state() const override;
 
+    /**
+     * Перезаписывает единственную строку со state эквалайзера актуальным snapshot-ом.
+     */
     void save_equalizer_state(const core::domain::equalizer_state& equalizer_state) override;
 
 private:

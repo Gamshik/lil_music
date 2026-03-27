@@ -6,12 +6,18 @@
 
 namespace soundcloud::core::use_cases {
 
+/**
+ * Включает или выключает EQ bypass, не теряя пользовательские настройки полос.
+ */
 class set_equalizer_enabled_use_case {
 public:
     set_equalizer_enabled_use_case(
         ports::i_audio_player& audio_player,
         ports::i_equalizer_settings_repository& equalizer_settings_repository);
 
+    /**
+     * Меняет только bypass-состояние EQ и сохраняет полученный snapshot.
+     */
     [[nodiscard]] domain::equalizer_state execute(bool enabled) const;
 
 private:

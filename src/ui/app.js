@@ -1385,6 +1385,8 @@ async function applyEqualizerBandGain(bandIndex, gainDb) {
     return;
   }
 
+  // Commit конкретной полосы идёт в native bridge, где уже пересчитываются
+  // preset identity, headroom compensation и реальный DSP snapshot.
   const response = normalizeBridgePayload(
     await window.setEqualizerBandGain({
       bandIndex,
@@ -1403,6 +1405,8 @@ async function applyEqualizerOutputGain(outputGainDb) {
     return;
   }
 
+  // Level живёт в том же native snapshot-е, что и полосы:
+  // UI не вычисляет headroom и не меняет DSP локально сам по себе.
   const response = normalizeBridgePayload(
     await window.setEqualizerOutputGain({
       outputGainDb,
@@ -1436,6 +1440,8 @@ function scheduleEqualizerBandSync(bandIndex, gainDb) {
 
   const timerId = window.setTimeout(() => {
     equalizerBandSyncTimers.delete(bandIndex);
+    // Пока пользователь тянет полосу, применяем её с небольшим debounce:
+    // так UI ощущается живым, но мы не спамим bridge лишними запросами на каждый pixel.
     void applyEqualizerBandGain(bandIndex, gainDb).catch((error) => {
       const errorMessage = error instanceof Error ? error.message : String(error);
       setPlaybackStatus("Ошибка EQ", errorMessage);
@@ -1486,6 +1492,7 @@ function updateLocalEqualizerBandValue(bandIndex, gainDb) {
     `.equalizer-slider[data-slider-kind="band"][data-band-index="${bandIndex}"]`,
   );
   if (sliderElement) {
+    // Во время drag обновляем UI сразу локально, не дожидаясь roundtrip в C++.
     applyEqualizerSliderVisualState(sliderElement, safeGainDb);
   }
 
@@ -1501,6 +1508,7 @@ function updateLocalEqualizerOutputGain(gainDb) {
     `.equalizer-slider[data-slider-kind="output"]`,
   );
   if (sliderElement) {
+    // Level preview показываем мгновенно, а реальное DSP применение приходит через debounce/commit.
     applyEqualizerSliderVisualState(sliderElement, safeGainDb);
   }
 
@@ -1632,6 +1640,7 @@ function getEqualizerSliderGainFromClientY(sliderElement, clientY) {
 function previewEqualizerSliderValue(sliderElement, gainDb) {
   const sliderKind = sliderElement.dataset.sliderKind || "band";
   if (sliderKind === "output") {
+    // Первый столбец EQ управляет не частотой, а общим уровнем обработанного сигнала.
     updateLocalEqualizerOutputGain(gainDb);
     return;
   }
@@ -1649,6 +1658,8 @@ async function commitEqualizerSliderValue(sliderElement) {
   const gainDb = clampEqualizerGainDb(Number.parseFloat(sliderElement.dataset.valueDb || "0"));
 
   try {
+    // На pointerup / keyboard commit делаем немедленный sync без ожидания debounce,
+    // чтобы последнее положение ползунка точно оказалось в native state.
     if (sliderKind === "output") {
       if (outputGainSyncTimer !== null) {
         window.clearTimeout(outputGainSyncTimer);

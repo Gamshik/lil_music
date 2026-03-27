@@ -6,6 +6,7 @@ get_equalizer_state_use_case::get_equalizer_state_use_case(const ports::i_audio_
     : audio_player_(audio_player) {}
 
 domain::equalizer_state get_equalizer_state_use_case::execute() const {
+    // Источник истины для текущего EQ snapshot-а живёт внутри player/backend-а.
     return audio_player_.get_equalizer_state();
 }
 

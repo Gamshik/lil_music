@@ -49,6 +49,8 @@ void equalizer_chain::configure(const float sample_rate, const std::size_t chann
         band_smoothers_[band_index].reset(target_band_gains_db_[band_index]);
     }
 
+    // При конфигурации синхронизируем smoother-ы с текущим состоянием цепочки,
+    // чтобы первый process() не делал неожиданный скачок параметров.
     wet_mix_smoother_.reset(enabled_ ? 1.0F : 0.0F);
     preamp_smoother_.reset(headroom_compensation_db_);
     output_gain_smoother_.reset(output_gain_db_);
@@ -64,6 +66,7 @@ void equalizer_chain::reset() {
 
 void equalizer_chain::set_enabled(const bool enabled) {
     enabled_ = enabled;
+    // Bypass не переключаем мгновенно: wet_mix делает короткий кроссфейд между dry и wet.
     wet_mix_smoother_.set_target(enabled ? 1.0F : 0.0F, ramp_samples_for_rate(sample_rate_));
 }
 
@@ -75,6 +78,8 @@ void equalizer_chain::set_band_gains(const std::array<float, band_count>& band_g
         band_smoothers_[band_index].set_target(target_band_gains_db_[band_index], ramp_samples);
     }
 
+    // После смены полос пересчитываем auto-headroom.
+    // Это отдельная компенсация поверх пользовательского output gain.
     headroom_compensation_db_ =
         headroom_controller_.compute_target_preamp_db(target_band_gains_db_, sample_rate_);
     preamp_smoother_.set_target(headroom_compensation_db_, ramp_samples);
@@ -110,6 +115,8 @@ void equalizer_chain::process(float* interleaved_samples, const std::size_t fram
             filter.process(processed_block, control_frames, channel_count_);
         }
 
+        // Параметры читаем поблочно: этого достаточно для гладкой работы,
+        // но заметно дешевле, чем обновлять их на каждом sample.
         const float wet_mix = wet_mix_smoother_.advance(control_frames);
         const float dry_mix = 1.0F - wet_mix;
         const float preamp_linear = db_to_linear(preamp_smoother_.advance(control_frames));
@@ -123,6 +130,7 @@ void equalizer_chain::process(float* interleaved_samples, const std::size_t fram
                 processed_block[sample_index] * preamp_linear * output_gain_linear;
             const float mixed_sample =
                 dry_block[sample_index] * dry_mix + wet_sample * wet_mix;
+            // В самом конце оставляем мягкий аварийный clamp как last resort.
             processed_block[sample_index] = (std::clamp)(
                 mixed_sample * volume_linear,
                 -0.995F,
@@ -162,6 +170,8 @@ const std::array<float, equalizer_chain::band_count>& equalizer_chain::band_freq
 void equalizer_chain::update_filter_coefficients(const std::size_t control_block_frames) {
     for (std::size_t band_index = 0; band_index < filters_.size(); ++band_index) {
         current_band_gains_db_[band_index] = band_smoothers_[band_index].advance(control_block_frames);
+        // Коэффициенты обновляем из smoothened gain, а не из резкого target,
+        // чтобы сам фильтр тоже эволюционировал плавно.
         filters_[band_index].set_coefficients(
             make_peaking_coefficients(
                 sample_rate_,

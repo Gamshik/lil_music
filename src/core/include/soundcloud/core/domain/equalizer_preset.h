@@ -28,6 +28,8 @@ enum class equalizer_preset_id {
 /**
  * Встроенный пресет эквалайзера.
  * Хранит только data model без UI-логики.
+ * Важно, что preset не живёт в persistence: он часть доменной модели приложения,
+ * а не пользовательские данные из БД.
  */
 struct equalizer_preset {
     equalizer_preset_id id = equalizer_preset_id::flat;
@@ -35,6 +37,9 @@ struct equalizer_preset {
     std::array<float, 10> gains_db{};
 };
 
+/**
+ * Нормализует enum preset-а в строковый id для bridge/persistence слоя.
+ */
 [[nodiscard]] inline std::string_view to_string(const equalizer_preset_id preset_id) {
     switch (preset_id) {
         case equalizer_preset_id::flat:
@@ -74,6 +79,10 @@ struct equalizer_preset {
     return "custom";
 }
 
+/**
+ * Обратное преобразование строкового id в доменный enum.
+ * Используется при чтении сохранённого состояния эквалайзера из persistence.
+ */
 [[nodiscard]] inline std::optional<equalizer_preset_id> equalizer_preset_id_from_string(
     const std::string_view value) {
     if (value == "flat") {

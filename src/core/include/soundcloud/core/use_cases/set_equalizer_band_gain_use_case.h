@@ -8,12 +8,18 @@
 
 namespace soundcloud::core::use_cases {
 
+/**
+ * Меняет gain конкретной EQ-полосы и сохраняет новое состояние.
+ */
 class set_equalizer_band_gain_use_case {
 public:
     set_equalizer_band_gain_use_case(
         ports::i_audio_player& audio_player,
         ports::i_equalizer_settings_repository& equalizer_settings_repository);
 
+    /**
+     * band_index адресует одну из 10 полос, gain_db приходит из UI и нормализуется по диапазону.
+     */
     [[nodiscard]] domain::equalizer_state execute(std::size_t band_index, float gain_db) const;
 
 private:

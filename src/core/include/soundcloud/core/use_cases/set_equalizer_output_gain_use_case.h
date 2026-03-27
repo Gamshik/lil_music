@@ -6,12 +6,19 @@
 
 namespace soundcloud::core::use_cases {
 
+/**
+ * Меняет общий уровень обработанного EQ-сигнала.
+ * Это не playback volume, а именно gain после EQ-цепочки.
+ */
 class set_equalizer_output_gain_use_case {
 public:
     set_equalizer_output_gain_use_case(
         ports::i_audio_player& audio_player,
         ports::i_equalizer_settings_repository& equalizer_settings_repository);
 
+    /**
+     * Нормализует входной gain, применяет его в player и сохраняет новый snapshot.
+     */
     [[nodiscard]] domain::equalizer_state execute(float output_gain_db) const;
 
 private:

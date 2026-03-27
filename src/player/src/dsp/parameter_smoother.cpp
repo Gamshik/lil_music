@@ -3,6 +3,7 @@
 namespace soundcloud::player::dsp {
 
 void parameter_smoother::reset(const float value) {
+    // Reset используем там, где переход должен быть мгновенным и clickless ramp не нужен.
     current_value_ = value;
     target_value_ = value;
     remaining_samples_ = 0;
@@ -11,6 +12,7 @@ void parameter_smoother::reset(const float value) {
 void parameter_smoother::set_target(const float target_value, const std::size_t ramp_samples) {
     target_value_ = target_value;
     if (ramp_samples == 0) {
+        // Если ramp не нужен, сразу синхронизируем текущую точку с целевой.
         current_value_ = target_value_;
         remaining_samples_ = 0;
         return;
@@ -25,11 +27,14 @@ float parameter_smoother::advance(const std::size_t consumed_samples) {
     }
 
     if (consumed_samples >= remaining_samples_) {
+        // Последний шаг перехода: фиксируем точное целевое значение без накопления ошибки.
         current_value_ = target_value_;
         remaining_samples_ = 0;
         return current_value_;
     }
 
+    // Линейно двигаем параметр к цели.
+    // Для EQ этого достаточно: нам нужен предсказуемый clickless ramp, а не сложная кривая.
     const float delta = target_value_ - current_value_;
     current_value_ += delta * (static_cast<float>(consumed_samples) /
                                static_cast<float>(remaining_samples_));

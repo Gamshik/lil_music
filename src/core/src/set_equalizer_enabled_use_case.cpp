@@ -9,6 +9,7 @@ set_equalizer_enabled_use_case::set_equalizer_enabled_use_case(
       equalizer_settings_repository_(equalizer_settings_repository) {}
 
 domain::equalizer_state set_equalizer_enabled_use_case::execute(const bool enabled) const {
+    // Выключение EQ не стирает preset/bands/output gain, а только переводит DSP в bypass.
     audio_player_.set_equalizer_enabled(enabled);
     const domain::equalizer_state equalizer_state = audio_player_.get_equalizer_state();
     equalizer_settings_repository_.save_equalizer_state(equalizer_state);

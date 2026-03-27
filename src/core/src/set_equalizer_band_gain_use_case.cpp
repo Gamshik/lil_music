@@ -13,6 +13,7 @@ set_equalizer_band_gain_use_case::set_equalizer_band_gain_use_case(
 domain::equalizer_state set_equalizer_band_gain_use_case::execute(
     const std::size_t band_index,
     const float gain_db) const {
+    // UI может прислать любое число, поэтому use case дополнительно нормализует диапазон.
     audio_player_.set_equalizer_band_gain(band_index, (std::clamp)(gain_db, -12.0F, 12.0F));
     const domain::equalizer_state equalizer_state = audio_player_.get_equalizer_state();
     equalizer_settings_repository_.save_equalizer_state(equalizer_state);

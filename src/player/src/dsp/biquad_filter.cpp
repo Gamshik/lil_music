@@ -15,12 +15,16 @@ void biquad_filter::configure(
     const biquad_coefficients coefficients) {
     coefficients_ = coefficients;
     if (z1_.size() != channel_count || z2_.size() != channel_count) {
+        // Состояние храним отдельно на канал, поэтому при смене channel layout
+        // память фильтра нужно инициализировать заново.
         z1_.assign(channel_count, 0.0F);
         z2_.assign(channel_count, 0.0F);
     }
 }
 
 void biquad_filter::set_coefficients(const biquad_coefficients coefficients) {
+    // Важно не трогать z1_/z2_ при обычном обновлении EQ gain:
+    // именно сохранение внутреннего состояния делает изменение полос гладким.
     coefficients_ = coefficients;
 }
 
@@ -65,6 +69,8 @@ biquad_coefficients make_peaking_coefficients(
     const float max_supported_frequency_hz = (sample_rate * 0.5F) * 0.9F;
     const float safe_center_frequency_hz =
         (std::clamp)(center_frequency_hz, 10.0F, max_supported_frequency_hz);
+    // Приближение к Nyquist делает peaking-фильтр плохо обусловленным,
+    // поэтому верхние полосы дополнительно ограничиваем безопасной зоной.
     const float a = std::pow(10.0F, gain_db / 40.0F);
     const float omega = 2.0F * kPi * (safe_center_frequency_hz / sample_rate);
     const float sin_omega = std::sin(omega);

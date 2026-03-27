@@ -6,12 +6,18 @@
 
 namespace soundcloud::core::use_cases {
 
+/**
+ * Сбрасывает EQ в базовое состояние Flat и сохраняет его в persistence.
+ */
 class reset_equalizer_use_case {
 public:
     reset_equalizer_use_case(
         ports::i_audio_player& audio_player,
         ports::i_equalizer_settings_repository& equalizer_settings_repository);
 
+    /**
+     * Выполняет reset на стороне player и затем фиксирует новый snapshot в БД.
+     */
     [[nodiscard]] domain::equalizer_state execute() const;
 
 private:

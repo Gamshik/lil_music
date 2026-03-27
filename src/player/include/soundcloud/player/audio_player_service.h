@@ -101,6 +101,7 @@ public:
     [[nodiscard]] core::domain::equalizer_state get_equalizer_state() const override;
 
 private:
+    // Единственный владелец конкретной Windows-реализации playback + EQ backend-а.
     std::unique_ptr<windows_streaming_audio_backend> backend_;
 };
 

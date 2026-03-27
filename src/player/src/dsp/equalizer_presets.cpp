@@ -6,6 +6,8 @@ std::vector<soundcloud::core::domain::equalizer_preset> get_builtin_equalizer_pr
     using preset = soundcloud::core::domain::equalizer_preset;
     using preset_id = soundcloud::core::domain::equalizer_preset_id;
 
+    // Все встроенные пресеты живут здесь как data-only наборы gain-ов.
+    // Это упрощает сравнение с Custom и не заставляет UI хардкодить значения локально.
     return {
         preset{preset_id::flat, "Flat", {0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F}},
         preset{preset_id::bass_boost, "Bass Boost", {5.0F, 4.5F, 3.5F, 2.0F, 1.0F, 0.0F, -1.0F, -1.5F, -2.0F, -2.5F}},

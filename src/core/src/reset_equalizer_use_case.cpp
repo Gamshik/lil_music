@@ -9,6 +9,8 @@ reset_equalizer_use_case::reset_equalizer_use_case(
       equalizer_settings_repository_(equalizer_settings_repository) {}
 
 domain::equalizer_state reset_equalizer_use_case::execute() const {
+    // Reset сначала переводит EQ в Flat на стороне player,
+    // а затем мы фиксируем итоговое состояние в persistence.
     audio_player_.reset_equalizer();
     const domain::equalizer_state equalizer_state = audio_player_.get_equalizer_state();
     equalizer_settings_repository_.save_equalizer_state(equalizer_state);

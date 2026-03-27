@@ -13,6 +13,7 @@ class json_reader {
 public:
     explicit json_reader(const std::string& source) : source_(source) {}
 
+    // В формате bridge-вызова интересует только первый аргумент из JSON-массива.
     std::optional<std::string> read_string_field_from_first_argument(
         const std::string& field_name) {
         skip_whitespace();
@@ -71,6 +72,7 @@ public:
     }
 
 private:
+    // Достаёт строковое поле из JSON-object, который лежит в первом аргументе bridge-вызова.
     std::optional<std::string> read_string_field_from_object(const std::string& field_name) {
         if (!consume('{')) {
             return std::nullopt;
@@ -116,6 +118,7 @@ private:
         return std::nullopt;
     }
 
+    // Аналогично строковому варианту, но читает целочисленный литерал.
     std::optional<int> read_integer_field_from_object(const std::string& field_name) {
         if (!consume('{')) {
             return std::nullopt;
@@ -161,6 +164,7 @@ private:
         return std::nullopt;
     }
 
+    // Читает вещественное значение, которое bridge использует для gain/output level.
     std::optional<float> read_float_field_from_object(const std::string& field_name) {
         if (!consume('{')) {
             return std::nullopt;
@@ -206,6 +210,7 @@ private:
         return std::nullopt;
     }
 
+    // Читает boolean-флаг из object payload.
     std::optional<bool> read_boolean_field_from_object(const std::string& field_name) {
         if (!consume('{')) {
             return std::nullopt;
@@ -251,6 +256,7 @@ private:
         return std::nullopt;
     }
 
+    // Разбирает JSON string literal с поддержкой стандартных escape-последовательностей.
     std::optional<std::string> parse_string() {
         if (!consume('"')) {
             return std::nullopt;
@@ -308,6 +314,7 @@ private:
         return std::nullopt;
     }
 
+    // Поддерживает как numeric literal, так и строку, содержащую число.
     std::optional<int> parse_integer() {
         if (peek('"')) {
             const std::optional<std::string> integer_as_string = parse_string();
@@ -362,6 +369,7 @@ private:
         }
     }
 
+    // Аналогичный parser для float-значений.
     std::optional<float> parse_float() {
         const std::size_t token_begin = position_;
         if (peek('"')) {
@@ -402,6 +410,7 @@ private:
         }
     }
 
+    // Минимальный parser для true/false.
     std::optional<bool> parse_boolean() {
         if (skip_literal("true")) {
             return true;
@@ -414,6 +423,7 @@ private:
         return std::nullopt;
     }
 
+    // Пропускает произвольное JSON value, если поле нам не нужно читать явно.
     bool skip_value() {
         skip_whitespace();
         if (is_end()) {
@@ -441,6 +451,7 @@ private:
         return skip_literal("true") || skip_literal("false") || skip_literal("null");
     }
 
+    // Пропускает целый JSON object рекурсивно.
     bool skip_object() {
         if (!consume('{')) {
             return false;
@@ -480,6 +491,7 @@ private:
         return false;
     }
 
+    // Пропускает целый JSON array рекурсивно.
     bool skip_array() {
         if (!consume('[')) {
             return false;
@@ -510,6 +522,7 @@ private:
         return false;
     }
 
+    // Пропускает numeric literal с optional fraction/exponent частью.
     bool skip_number() {
         if (peek('-')) {
             ++position_;
@@ -540,6 +553,7 @@ private:
         return true;
     }
 
+    // Пропускает последовательность цифр и сообщает, было ли хотя бы одно число.
     bool skip_digits() {
         const std::size_t digits_begin = position_;
         while (!is_end() && std::isdigit(static_cast<unsigned char>(source_[position_])) != 0) {
@@ -549,6 +563,7 @@ private:
         return position_ > digits_begin;
     }
 
+    // Сравнивает и потребляет fixed literal вроде true/false/null.
     bool skip_literal(std::string_view literal) {
         if (source_.substr(position_, literal.size()) != literal) {
             return false;
@@ -558,6 +573,7 @@ private:
         return true;
     }
 
+    // Проверяет и пропускает 4 hex-символа после \u.
     bool skip_unicode_escape() {
         for (int index = 0; index < 4; ++index) {
             if (is_end() ||
@@ -571,6 +587,7 @@ private:
         return true;
     }
 
+    // Игнорирует пробелы между JSON-токенами.
     void skip_whitespace() {
         while (!is_end() &&
                std::isspace(static_cast<unsigned char>(source_[position_])) != 0) {
@@ -578,6 +595,7 @@ private:
         }
     }
 
+    // Потребляет символ только если он совпал с ожиданием.
     bool consume(const char expected_character) {
         if (!peek(expected_character)) {
             return false;
@@ -587,15 +605,19 @@ private:
         return true;
     }
 
+    // Проверяет следующий символ без продвижения позиции.
     bool peek(const char expected_character) const {
         return !is_end() && source_[position_] == expected_character;
     }
 
+    // Достигнут конец исходной строки JSON.
     bool is_end() const {
         return position_ >= source_.size();
     }
 
+    // Исходный JSON payload bridge-вызова.
     const std::string& source_;
+    // Текущая позиция чтения внутри payload-а.
     std::size_t position_ = 0;
 };
 
@@ -667,6 +689,7 @@ std::optional<int> bridge_json_codec::read_integer_field_from_first_argument(
 std::optional<float> bridge_json_codec::read_float_field_from_first_argument(
     const std::string& request_json,
     const std::string& field_name) {
+    // Используется для EQ gain/output level и других дробных параметров UI.
     json_reader reader(request_json);
     return reader.read_float_field_from_first_argument(field_name);
 }
@@ -674,6 +697,7 @@ std::optional<float> bridge_json_codec::read_float_field_from_first_argument(
 std::optional<bool> bridge_json_codec::read_boolean_field_from_first_argument(
     const std::string& request_json,
     const std::string& field_name) {
+    // Используется для enabled/disabled флагов в payload-ах bridge.
     json_reader reader(request_json);
     return reader.read_boolean_field_from_first_argument(field_name);
 }

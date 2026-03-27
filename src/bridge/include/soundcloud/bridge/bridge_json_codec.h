@@ -32,6 +32,10 @@ public:
         const std::string& request_json,
         const std::string& field_name);
 
+    /**
+     * Читает float-поле из первого аргумента bridge-вызова.
+     * Используется, например, для EQ gain и output level.
+     */
     static std::optional<float> read_float_field_from_first_argument(
         const std::string& request_json,
         const std::string& field_name);

@@ -117,6 +117,8 @@ sqlite_statement prepare_statement(sqlite3* connection, const char* sql) {
 }
 
 std::string serialize_band_gains(const std::array<equalizer_band, 10>& bands) {
+    // В persistence мы держим gains как компактную CSV-строку:
+    // этого достаточно для одного settings-record и не требует отдельной таблицы полос.
     std::ostringstream serialized;
     for (std::size_t index = 0; index < bands.size(); ++index) {
         if (index != 0) {
@@ -159,6 +161,8 @@ std::array<float, 10> deserialize_band_gains(const std::string_view serialized_g
 }
 
 void ensure_schema(sqlite3* connection) {
+    // В таблице всегда одна logical запись с id = 1.
+    // Так хранилище эквалайзера работает как app-level settings store.
     execute_sql(
         connection,
         "CREATE TABLE IF NOT EXISTS equalizer_settings ("
@@ -171,6 +175,8 @@ void ensure_schema(sqlite3* connection) {
         "updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP"
         ");");
 
+    // Небольшая inline-миграция для старых локальных БД:
+    // если output_gain_db уже есть, SQLite вернёт duplicate column name, что здесь допустимо.
     char* error_message = nullptr;
     const int alter_result = sqlite3_exec(
         connection,
@@ -233,6 +239,8 @@ std::optional<equalizer_state> sqlite_equalizer_settings_repository::load_equali
     const std::array<float, 10> last_nonflat_gains_db = deserialize_band_gains(
         last_nonflat_text != nullptr ? reinterpret_cast<const char*>(last_nonflat_text) : "");
 
+    // Частоты полос не храним в БД:
+    // они фиксированы на уровне DSP/домена и лишь восстанавливаются здесь для готового snapshot-а.
     constexpr std::array<float, 10> frequencies_hz{
         60.0F,
         170.0F,
@@ -278,6 +286,8 @@ void sqlite_equalizer_settings_repository::save_equalizer_state(
 
     const std::string active_preset_id =
         std::string(soundcloud::core::domain::to_string(equalizer_state.active_preset_id));
+    // В БД пишем именно текущее состояние bands, даже если активен built-in preset:
+    // это позволяет восстановить UI и DSP одинаково после перезапуска.
     const std::string custom_band_gains = serialize_band_gains(equalizer_state.bands);
     const std::string last_nonflat_user_state =
         serialize_band_gains(equalizer_state.last_nonflat_band_gains_db);

@@ -5,6 +5,9 @@
 
 namespace soundcloud::player::dsp {
 
+/**
+ * Нормализованные коэффициенты biquad-фильтра в форме Direct Form II Transposed.
+ */
 struct biquad_coefficients {
     float b0 = 1.0F;
     float b1 = 0.0F;
@@ -18,9 +21,22 @@ struct biquad_coefficients {
  */
 class biquad_filter {
 public:
+    /**
+     * Инициализирует фильтр под конкретное число каналов и стартовые коэффициенты.
+     */
     void configure(std::size_t channel_count, biquad_coefficients coefficients);
+    /**
+     * Меняет только коэффициенты, не сбрасывая внутреннее состояние каналов.
+     * Это критично для EQ: иначе при каждом обновлении полос слышались бы артефакты.
+     */
     void set_coefficients(biquad_coefficients coefficients);
+    /**
+     * Сбрасывает внутреннюю память фильтра.
+     */
     void reset();
+    /**
+     * Обрабатывает interleaved PCM buffer in-place.
+     */
     void process(float* interleaved_samples, std::size_t frame_count, std::size_t channel_count);
 
 private:

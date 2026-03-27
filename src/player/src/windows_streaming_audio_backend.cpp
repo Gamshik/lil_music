@@ -52,6 +52,7 @@ using soundcloud::core::domain::equalizer_status;
 using soundcloud::core::domain::playback_state;
 using soundcloud::core::domain::playback_status;
 
+// TODO: может вынести в отдельный модуль, по тиму common
 template <typename interface_type>
 class com_ptr {
 public:
@@ -80,15 +81,18 @@ public:
         reset();
     }
 
+    // Даёт доступ к сырому COM pointer без передачи владения.
     [[nodiscard]] interface_type* get() const {
         return value_;
     }
 
+    // Подготавливает COM pointer к заполнению через out-parameter.
     [[nodiscard]] interface_type** put() {
         reset();
         return &value_;
     }
 
+    // Освобождает предыдущий COM object и принимает новый.
     void reset(interface_type* value = nullptr) {
         if (value_ != nullptr) {
             value_->Release();
@@ -98,10 +102,12 @@ public:
     }
 
 private:
+    // Владение конкретным COM interface instance.
     interface_type* value_ = nullptr;
 };
 
 struct cotaskmem_deleter {
+    // Освобождает WAVEFORMATEX, который WASAPI возвращает через CoTaskMemAlloc.
     void operator()(WAVEFORMATEX* format) const {
         if (format != nullptr) {
             CoTaskMemFree(format);
@@ -110,34 +116,55 @@ struct cotaskmem_deleter {
 };
 
 struct render_format_descriptor {
+    // Оригинальный mix format устройства, которым владеет unique_ptr.
     std::unique_ptr<WAVEFORMATEX, cotaskmem_deleter> wave_format;
+    // Количество каналов render device.
     std::uint32_t channel_count = 0;
+    // Sample rate render device.
     std::uint32_t sample_rate = 0;
+    // Битность целевого формата устройства.
     std::uint32_t bits_per_sample = 0;
+    // Размер одного interleaved frame в bytes.
     std::uint32_t block_align = 0;
+    // Нативный путь устройства принимает float PCM напрямую.
     bool is_float = false;
 };
 
 struct worker_context {
+    // Декодер удалённого media source в PCM float.
     com_ptr<IMFSourceReader> source_reader;
+    // Текущее default render device.
     com_ptr<IMMDevice> render_device;
+    // WASAPI audio client shared mode.
     com_ptr<IAudioClient> audio_client;
+    // Render service для записи PCM в endpoint buffer.
     com_ptr<IAudioRenderClient> render_client;
+    // Описание render format устройства.
     render_format_descriptor render_format;
+    // Живая DSP-цепочка EQ для текущего audio path.
     dsp::equalizer_chain equalizer_chain;
+    // Очередь уже декодированных float sample-ов.
     std::vector<float> decoded_samples;
+    // Смещение чтения внутри decoded_samples.
     std::size_t decoded_sample_offset = 0;
+    // Временная позиция следующего sample-а в 100ns units.
     std::int64_t next_sample_time_100ns = 0;
+    // Общая длительность текущего source в 100ns units.
     std::int64_t duration_100ns = 0;
+    // Размер WASAPI render buffer в frames.
     UINT32 buffer_frame_count = 0;
+    // Source reader и source path готовы к чтению PCM.
     bool source_ready = false;
+    // Декодер дошёл до конца потока.
     bool end_of_stream_reached = false;
+    // WASAPI client сейчас запущен и потребляет render buffer.
     bool audio_client_started = false;
 };
 
 std::runtime_error make_hresult_error(
     const std::string_view operation_name,
     const HRESULT result_code) {
+    // Унифицируем WinAPI/Media Foundation ошибки в один человекочитаемый runtime_error.
     std::ostringstream message;
     message << operation_name << " завершилась ошибкой HRESULT 0x" << std::hex
             << static_cast<unsigned long>(result_code) << std::dec << ": "
@@ -152,6 +179,8 @@ void throw_if_failed(const HRESULT result_code, const std::string_view operation
 }
 
 std::wstring utf8_to_utf16(const std::string& value) {
+    // Media Foundation URL API и часть WinAPI ждут wide string, поэтому bridge/API URL
+    // переводим в UTF-16 прямо перед нативным вызовом.
     if (value.empty()) {
         return {};
     }
@@ -183,10 +212,12 @@ std::wstring utf8_to_utf16(const std::string& value) {
 }
 
 std::int64_t convert_100ns_to_milliseconds(const std::int64_t value_100ns) {
+    // Media Foundation хранит time stamps в 100ns ticks.
     return value_100ns > 0 ? value_100ns / 10000 : 0;
 }
 
 float convert_volume_percent_to_linear(const int volume_percent) {
+    // Playback volume из domain слоя приходит как 0..100 и перед DSP нормализуется в 0..1.
     return static_cast<float>((std::clamp)(volume_percent, 0, 100)) / 100.0F;
 }
 
@@ -211,6 +242,7 @@ bool is_extensible_pcm_format(const WAVEFORMATEX& wave_format) {
 }
 
 bool is_supported_render_format(const WAVEFORMATEX& wave_format) {
+    // Поддерживаем только PCM/float shared render path-ы, потому что EQ работает на PCM buffer.
     return wave_format.wFormatTag == WAVE_FORMAT_IEEE_FLOAT ||
            wave_format.wFormatTag == WAVE_FORMAT_PCM ||
            is_extensible_float_format(wave_format) ||
@@ -241,6 +273,8 @@ render_format_descriptor describe_wave_format(WAVEFORMATEX* wave_format) {
 void configure_source_reader_output(
     IMFSourceReader* source_reader,
     const render_format_descriptor& render_format) {
+    // Независимо от device mix format заставляем source reader отдавать float PCM:
+    // так DSP-цепочка всегда получает единый рабочий формат.
     com_ptr<IMFMediaType> output_type;
     throw_if_failed(MFCreateMediaType(output_type.put()), "Создание Media Foundation media type");
     throw_if_failed(
@@ -290,6 +324,7 @@ void configure_source_reader_output(
 com_ptr<IMFSourceReader> create_source_reader(
     const std::string& stream_url,
     const render_format_descriptor& render_format) {
+    // Создаём отдельный reader под текущий stream URL и сразу конфигурируем его под float PCM.
     com_ptr<IMFAttributes> attributes;
     throw_if_failed(MFCreateAttributes(attributes.put(), 2), "Создание атрибутов source reader");
     throw_if_failed(
@@ -309,6 +344,7 @@ com_ptr<IMFSourceReader> create_source_reader(
 }
 
 std::int64_t query_source_duration_100ns(IMFSourceReader* source_reader) {
+    // Длительность нужна только для UI/progress и может не существовать у некоторых источников.
     PROPVARIANT duration_value;
     PropVariantInit(&duration_value);
     const HRESULT duration_result = source_reader->GetPresentationAttribute(
@@ -332,6 +368,7 @@ std::int64_t query_source_duration_100ns(IMFSourceReader* source_reader) {
 }
 
 void reset_audio_client(worker_context& context) {
+    // Stop + Reset очищают transport state WASAPI перед seek/eos/device transitions.
     if (context.audio_client_started && context.audio_client.get() != nullptr) {
         context.audio_client.get()->Stop();
         context.audio_client_started = false;
@@ -347,6 +384,8 @@ void convert_float_to_render_format(
     const std::size_t frame_count,
     const render_format_descriptor& render_format,
     BYTE* destination_bytes) {
+    // DSP внутри проекта работает в float PCM, а перед отдачей в устройство
+    // конвертируем буфер в фактический mix format endpoint-а.
     const std::size_t sample_count = frame_count * render_format.channel_count;
     if (render_format.is_float) {
         std::memcpy(destination_bytes, source_samples, sample_count * sizeof(float));
@@ -377,6 +416,7 @@ void convert_float_to_render_format(
 bool band_gains_match(
     const std::array<equalizer_band, 10>& bands,
     const std::array<float, 10>& gains_db) {
+    // Небольшой epsilon защищает от ложного несовпадения из-за float округления.
     for (std::size_t index = 0; index < bands.size(); ++index) {
         if (std::fabs(bands[index].gain_db - gains_db[index]) > 0.01F) {
             return false;
@@ -392,6 +432,7 @@ class windows_streaming_audio_backend::implementation {
 public:
     implementation()
         : available_presets_(dsp::get_builtin_equalizer_presets()) {
+        // Сначала поднимаем domain/default state, потом уже Media Foundation и worker thread.
         populate_default_equalizer_state_locked();
 
         throw_if_failed(MFStartup(MF_VERSION), "Запуск Media Foundation для streaming backend");
@@ -406,6 +447,7 @@ public:
     }
 
     ~implementation() {
+        // Корректно останавливаем worker и только потом завершаем Media Foundation.
         {
             std::scoped_lock lock(state_mutex_);
             shutting_down_ = true;
@@ -427,6 +469,7 @@ public:
         }
 
         std::scoped_lock lock(state_mutex_);
+        // Generation token отделяет новый запрос источника от предыдущих load/seek состояний.
         requested_stream_url_ = stream_url;
         ++requested_source_generation_;
         playback_intent_playing_ = true;
@@ -443,6 +486,8 @@ public:
 
     void play() {
         std::scoped_lock lock(state_mutex_);
+        // playback_intent_playing_ хранит именно намерение transport-а,
+        // даже если source ещё не готов и реальный status пока loading.
         playback_intent_playing_ = true;
         if (requested_stream_url_.empty() && current_stream_url_.empty()) {
             playback_state_.status = playback_status::error;
@@ -475,6 +520,7 @@ public:
             throw std::runtime_error("Нельзя перемотать трек, пока плеер не загрузил аудиопоток.");
         }
 
+        // Сам seek выполняется на worker thread, поэтому здесь только фиксируем pending command.
         pending_seek_ms_ = (std::max)(position_ms, static_cast<std::int64_t>(0));
         playback_state_.position_ms = *pending_seek_ms_;
         if (playback_intent_playing_) {
@@ -491,6 +537,8 @@ public:
 
     void set_equalizer_enabled(const bool enabled) {
         std::scoped_lock lock(state_mutex_);
+        // EQ bypass живёт отдельно от значений полос:
+        // пользователь может выключить EQ, но не потерять свою настройку.
         equalizer_state_.enabled = enabled;
         recompute_equalizer_metadata_locked(current_sample_rate_or_default_locked());
         command_condition_variable_.notify_all();
@@ -499,6 +547,7 @@ public:
     void select_equalizer_preset(const equalizer_preset_id preset_id) {
         std::scoped_lock lock(state_mutex_);
         if (preset_id == equalizer_preset_id::custom) {
+            // Custom появляется только как результат ручной настройки полос.
             return;
         }
 
@@ -514,6 +563,8 @@ public:
             equalizer_state_.bands[index].gain_db = preset_iterator->gains_db[index];
         }
         equalizer_state_.active_preset_id = preset_id;
+        // Сохраняем "последнее осмысленное" пользовательское состояние,
+        // чтобы ручная настройка не терялась после переключений.
         update_last_nonflat_state_locked();
         recompute_equalizer_metadata_locked(current_sample_rate_or_default_locked());
         command_condition_variable_.notify_all();
@@ -526,6 +577,7 @@ public:
         }
 
         equalizer_state_.bands[band_index].gain_db = (std::clamp)(gain_db, -12.0F, 12.0F);
+        // После ручной правки пытаемся понять, не совпали ли мы снова с одним из preset-ов.
         recalculate_active_preset_locked();
         update_last_nonflat_state_locked();
         recompute_equalizer_metadata_locked(current_sample_rate_or_default_locked());
@@ -533,6 +585,7 @@ public:
     }
 
     void reset_equalizer() {
+        // Reset возвращает Flat и одновременно убирает общий user-facing level.
         select_equalizer_preset(equalizer_preset_id::flat);
 
         std::scoped_lock lock(state_mutex_);
@@ -543,6 +596,7 @@ public:
 
     void set_equalizer_output_gain(const float output_gain_db) {
         std::scoped_lock lock(state_mutex_);
+        // Этот gain относится только к wet/EQ path и не равен playback volume.
         equalizer_state_.output_gain_db = (std::clamp)(output_gain_db, -12.0F, 12.0F);
         command_condition_variable_.notify_all();
     }
@@ -575,6 +629,8 @@ public:
 
 private:
     void worker_main() {
+        // Весь нативный audio pipeline живёт на dedicated worker thread:
+        // здесь и COM apartment, и WASAPI, и render loop, и обработка команд.
         const HRESULT com_result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
         const bool worker_should_uninitialize_com = SUCCEEDED(com_result);
         DWORD task_index = 0;
@@ -665,6 +721,7 @@ private:
     }
 
     [[nodiscard]] bool transport_state_changed_locked() const {
+        // Проверяет, требуется ли worker-у отреагировать на play/pause intention.
         if (playback_intent_playing_) {
             return playback_state_.status == playback_status::loading ||
                    playback_state_.status == playback_status::paused;
@@ -675,6 +732,7 @@ private:
     }
 
     void initialize_audio_path(worker_context& context) {
+        // Поднимаем shared WASAPI render path под default output device и конфигурируем EQ chain.
         context.render_client.reset();
         context.audio_client.reset();
         context.render_device.reset();
@@ -736,6 +794,7 @@ private:
     }
 
     void load_source(worker_context& context, const std::uint64_t generation) {
+        // Полная смена source: очищаем декодер, буферы, таймстемпы и состояние готовности.
         if (context.audio_client_started) {
             context.audio_client.get()->Stop();
             context.audio_client_started = false;
@@ -787,6 +846,7 @@ private:
     }
 
     void perform_seek(worker_context& context, const std::int64_t position_ms) {
+        // Seek делается прямо через source reader current position и сбрасывает buffered PCM.
         if (!context.source_ready || context.source_reader.get() == nullptr) {
             return;
         }
@@ -815,6 +875,7 @@ private:
     }
 
     void start_rendering(worker_context& context) {
+        // Перед стартом render loop каждый раз синхронизируем runtime DSP targets с domain state.
         if (!context.source_ready || context.audio_client.get() == nullptr) {
             return;
         }
@@ -831,6 +892,7 @@ private:
     }
 
     void pause_rendering(worker_context& context) {
+        // Pause останавливает device consumption, но не разрушает source и EQ state.
         if (!context.audio_client_started || context.audio_client.get() == nullptr) {
             return;
         }
@@ -844,6 +906,7 @@ private:
     }
 
     void render_audio(worker_context& context) {
+        // Главный render tick: проверяем свободный buffer, подтягиваем PCM, прогоняем через EQ и пишем в WASAPI.
         if (context.audio_client.get() == nullptr || context.render_client.get() == nullptr) {
             return;
         }
@@ -936,6 +999,7 @@ private:
     }
 
     void ensure_decoded_frames(worker_context& context, const std::size_t required_frames) {
+        // Декодируем PCM только пока не накопили нужное число frame-ов для следующей записи в render buffer.
         const std::size_t required_sample_count =
             required_frames * context.render_format.channel_count;
         const std::size_t available_sample_count =
@@ -997,6 +1061,7 @@ private:
     }
 
     void teardown_context(worker_context& context) {
+        // Полностью освобождаем device/source ресурсы перед shutdown worker-а.
         if (context.audio_client_started && context.audio_client.get() != nullptr) {
             context.audio_client.get()->Stop();
             context.audio_client_started = false;
@@ -1009,6 +1074,8 @@ private:
     }
 
     void handle_device_invalidation() {
+        // При потере устройства переводим EQ/audio path в состояние восстановления,
+        // но не теряем domain snapshot настроек.
         std::scoped_lock lock(state_mutex_);
         source_ready_ = false;
         device_reinitialization_requested_ = true;
@@ -1018,6 +1085,7 @@ private:
     }
 
     void populate_default_equalizer_state_locked() {
+        // Базовое состояние приложения: Flat, EQ выключен, built-in presets готовы для UI.
         equalizer_state_.available_presets = available_presets_;
         equalizer_state_.status = equalizer_status::loading;
         for (std::size_t index = 0; index < equalizer_state_.bands.size(); ++index) {
@@ -1031,6 +1099,8 @@ private:
     }
 
     void recalculate_active_preset_locked() {
+        // Если текущие gains точно совпали с одним из built-in preset-ов,
+        // возвращаем этот preset вместо Custom.
         for (const equalizer_preset& preset : available_presets_) {
             if (preset.id == equalizer_preset_id::custom) {
                 continue;
@@ -1058,6 +1128,8 @@ private:
             return;
         }
 
+        // Храним последнюю non-flat форму отдельно от текущего active preset:
+        // это полезно для persistence и для возврата к ручной настройке.
         for (std::size_t index = 0; index < equalizer_state_.bands.size(); ++index) {
             equalizer_state_.last_nonflat_band_gains_db[index] = equalizer_state_.bands[index].gain_db;
         }
@@ -1071,6 +1143,8 @@ private:
 
         equalizer_state_.headroom_compensation_db =
             headroom_controller_.compute_target_preamp_db(band_gains_db, sample_rate);
+        // ready/error status здесь относится именно к доступности EQ как DSP-функции,
+        // а не к transport-состоянию playback.
         if (equalizer_state_.status != equalizer_status::audio_engine_unavailable &&
             equalizer_state_.status != equalizer_status::unsupported_audio_path) {
             equalizer_state_.status = equalizer_status::ready;
@@ -1079,6 +1153,7 @@ private:
     }
 
     [[nodiscard]] float current_sample_rate_or_default_locked() const {
+        // До первой инициализации устройства берём безопасный sample rate по умолчанию для metadata/headroom.
         return last_known_sample_rate_ > 0.0F ? last_known_sample_rate_ : 48000.0F;
     }
 
@@ -1087,6 +1162,8 @@ private:
         for (std::size_t index = 0; index < equalizer_state_.bands.size(); ++index) {
             band_gains_db[index] = equalizer_state_.bands[index].gain_db;
         }
+        // Эта точка является мостом между domain EQ state и runtime DSP chain:
+        // здесь player переводит сохранённый snapshot в реальные target-ы обработки.
         equalizer_chain.set_band_gains(band_gains_db);
         equalizer_chain.set_enabled(equalizer_state_.enabled);
         equalizer_chain.set_output_gain_db(equalizer_state_.output_gain_db);
@@ -1094,28 +1171,47 @@ private:
     }
 
     void apply_runtime_targets_to_chain_locked(dsp::equalizer_chain& equalizer_chain) {
+        // Обновляем sample rate cache и синхронизируем chain с последним domain snapshot-ом.
         std::scoped_lock lock(state_mutex_);
         last_known_sample_rate_ = equalizer_chain.sample_rate();
         apply_equalizer_targets_to_chain_locked(equalizer_chain);
     }
 
+    // Защищает общий state между UI thread и worker thread.
     mutable std::mutex state_mutex_;
+    // Будит worker при transport/EQ/device командах.
     std::condition_variable command_condition_variable_;
+    // Приложение завершает backend и worker должен выйти из цикла.
     bool shutting_down_ = false;
+    // Media Foundation уже поднята для процесса backend-а.
     bool media_foundation_started_ = false;
+    // Последнее намерение transport-а: должен ли playback сейчас играть.
     bool playback_intent_playing_ = false;
+    // Текущий source reader готов отдавать PCM.
     bool source_ready_ = false;
+    // Нужно заново поднять audio path после старта или потери устройства.
     bool device_reinitialization_requested_ = false;
+    // Generation id последнего запрошенного source.
     std::uint64_t requested_source_generation_ = 0;
+    // Generation id source-а, который уже реально активен.
     std::uint64_t active_source_generation_ = 0;
+    // Отложенная команда seek, которую worker применит на следующем тике.
     std::optional<std::int64_t> pending_seek_ms_;
+    // URL, который UI/API только что запросили на загрузку.
     std::string requested_stream_url_;
+    // URL реально активного источника playback.
     std::string current_stream_url_;
+    // Domain snapshot transport/playback state.
     playback_state playback_state_{};
+    // Domain snapshot equalizer state.
     equalizer_state equalizer_state_{};
+    // Built-in presets, доступные для сравнения и отдачи в UI.
     std::vector<equalizer_preset> available_presets_;
+    // Сервис расчёта auto-headroom compensation.
     dsp::output_headroom_controller headroom_controller_;
+    // Последний sample rate активного audio path.
     float last_known_sample_rate_ = 0.0F;
+    // Dedicated worker, на котором живёт весь streaming pipeline.
     std::thread worker_thread_;
 };
 

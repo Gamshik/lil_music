@@ -20,11 +20,25 @@ public:
     windows_streaming_audio_backend(const windows_streaming_audio_backend&) = delete;
     windows_streaming_audio_backend& operator=(const windows_streaming_audio_backend&) = delete;
 
+    /**
+     * Загружает новый remote stream в streaming backend.
+     */
     void load(const std::string& stream_url);
+    /**
+     * Запрашивает transport play.
+     */
     void play();
+    /**
+     * Ставит транспорт на паузу.
+     */
     void pause();
+    /**
+     * Выполняет seek внутри текущего source reader.
+     */
     void seek_to(std::int64_t position_ms);
     void set_volume_percent(int volume_percent);
+
+    // Ниже идёт публичный EQ API backend-а.
     void set_equalizer_enabled(bool enabled);
     void select_equalizer_preset(core::domain::equalizer_preset_id preset_id);
     void set_equalizer_band_gain(std::size_t band_index, float gain_db);

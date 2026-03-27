@@ -30,6 +30,7 @@ constexpr float kEqualizerQ = 1.414F;
 float evaluate_frequency_response_db(
     const biquad_coefficients& coefficients,
     const float normalized_frequency) {
+    // Аналитически оцениваем модуль частотной характеристики biquad на конкретной частоте.
     const std::complex<float> z1 = std::exp(
         std::complex<float>(0.0F, -2.0F * kPi * normalized_frequency));
     const std::complex<float> z2 = z1 * z1;
@@ -59,6 +60,8 @@ float output_headroom_controller::compute_target_preamp_db(
     for (int point_index = 0; point_index < frequency_points; ++point_index) {
         const float ratio = static_cast<float>(point_index) /
                             static_cast<float>(frequency_points - 1);
+        // Проверяем логарифмически распределённые точки по слышимому диапазону,
+        // но не уходим слишком близко к Nyquist текущего sample rate.
         const float frequency_hz =
             (std::min)(20.0F * std::pow(1000.0F, ratio), sample_rate * 0.45F);
         float response_db = 0.0F;
@@ -76,6 +79,8 @@ float output_headroom_controller::compute_target_preamp_db(
         max_response_db = (std::max)(max_response_db, response_db);
     }
 
+    // Если цепочка ничего не бустит, дополнительный preamp не нужен.
+    // Если бустит, оставляем ещё 1 dB safety margin против клиппинга.
     return max_response_db > 0.0F ? -(max_response_db + 1.0F) : 0.0F;
 }
 
