@@ -29,6 +29,19 @@ std::string to_string(const core::domain::playback_status status) {
     return "idle";
 }
 
+std::string to_string(const core::domain::playback_repeat_mode repeat_mode) {
+    switch (repeat_mode) {
+        case core::domain::playback_repeat_mode::none:
+            return "none";
+        case core::domain::playback_repeat_mode::playlist:
+            return "playlist";
+        case core::domain::playback_repeat_mode::track:
+            return "track";
+    }
+
+    return "none";
+}
+
 std::string build_error_response(const std::string& message) {
     std::ostringstream response;
     response << R"({"ok":false,"message":)" << bridge_json_codec::escape_string(message) << '}';
@@ -73,6 +86,7 @@ std::string serialize_queue_state(
              << R"(,"currentTrackTitle":)"
              << bridge_json_codec::escape_string(current_track.has_value() ? current_track->title : "")
              << R"(,"shuffleEnabled":)" << (queue_state.shuffle_enabled ? "true" : "false")
+             << R"(,"repeatMode":)" << bridge_json_codec::escape_string(to_string(queue_state.repeat_mode))
              << R"(,"canPlayPrevious":)" << (queue_state.can_play_previous ? "true" : "false")
              << R"(,"canPlayNext":)" << (queue_state.can_play_next ? "true" : "false")
              << R"(,"queuedTracks":[)";
@@ -160,8 +174,16 @@ std::vector<ui_binding> app_bridge::get_bindings() const {
             .handler = [this](const std::string&) { return build_play_next_track_response(); },
         },
         ui_binding{
+            .name = "playCompletionFollowUp",
+            .handler = [this](const std::string&) { return build_play_completion_follow_up_response(); },
+        },
+        ui_binding{
             .name = "toggleShuffle",
             .handler = [this](const std::string&) { return build_toggle_shuffle_response(); },
+        },
+        ui_binding{
+            .name = "cycleRepeatMode",
+            .handler = [this](const std::string&) { return build_cycle_repeat_mode_response(); },
         },
         ui_binding{
             .name = "pausePlayback",
@@ -227,6 +249,7 @@ std::string app_bridge::build_get_playback_state_response() const {
                  << R"(,"trackTitle":)"
                  << bridge_json_codec::escape_string(current_track.has_value() ? current_track->title : "")
                  << R"(,"shuffleEnabled":)" << (queue_state.shuffle_enabled ? "true" : "false")
+                 << R"(,"repeatMode":)" << bridge_json_codec::escape_string(to_string(queue_state.repeat_mode))
                  << R"(,"canPlayPrevious":)" << (queue_state.can_play_previous ? "true" : "false")
                  << R"(,"canPlayNext":)" << (queue_state.can_play_next ? "true" : "false")
                  << '}';
@@ -417,6 +440,33 @@ std::string app_bridge::build_play_next_track_response() const {
     }
 }
 
+std::string app_bridge::build_play_completion_follow_up_response() const {
+    try {
+        const std::optional<core::domain::track> follow_up_track =
+            playback_session_.peek_completion_track();
+        if (!follow_up_track.has_value()) {
+            return R"({"ok":true,"advanced":false})";
+        }
+
+        if (get_playback_state_use_case_.execute().status == core::domain::playback_status::loading) {
+            return build_loading_response(follow_up_track->id, follow_up_track->title);
+        }
+
+        play_track_use_case_.execute(follow_up_track->id);
+        playback_session_.mark_track_started(follow_up_track->id);
+
+        std::ostringstream response;
+        response << R"({"ok":true,"advanced":true,"trackId":)"
+                 << bridge_json_codec::escape_string(follow_up_track->id)
+                 << R"(,"trackTitle":)"
+                 << bridge_json_codec::escape_string(follow_up_track->title)
+                 << R"(,"state":"playing"})";
+        return response.str();
+    } catch (const std::exception& exception) {
+        return build_error_response(exception.what());
+    }
+}
+
 std::string app_bridge::build_toggle_shuffle_response() const {
     try {
         const bool shuffle_enabled = playback_session_.toggle_shuffle();
@@ -425,6 +475,22 @@ std::string app_bridge::build_toggle_shuffle_response() const {
             playback_session_.find_known_track(queue_state.current_track_id);
         if (shuffle_enabled != queue_state.shuffle_enabled) {
             return build_error_response("Не удалось синхронизировать состояние shuffle.");
+        }
+
+        return serialize_queue_state(queue_state, current_track);
+    } catch (const std::exception& exception) {
+        return build_error_response(exception.what());
+    }
+}
+
+std::string app_bridge::build_cycle_repeat_mode_response() const {
+    try {
+        const core::domain::playback_repeat_mode repeat_mode = playback_session_.cycle_repeat_mode();
+        const core::domain::playback_queue_state queue_state = playback_session_.get_queue_state();
+        const std::optional<core::domain::track> current_track =
+            playback_session_.find_known_track(queue_state.current_track_id);
+        if (repeat_mode != queue_state.repeat_mode) {
+            return build_error_response("Не удалось синхронизировать состояние repeat.");
         }
 
         return serialize_queue_state(queue_state, current_track);

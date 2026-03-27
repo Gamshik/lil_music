@@ -81,23 +81,18 @@ std::optional<domain::track> playback_session::peek_next_track() const {
         return shuffled_upcoming_tracks_.front();
     }
 
-    if (playback_history_.empty()) {
-        return std::nullopt;
+    if (const std::optional<domain::track> linear_next_track = find_linear_next_track_locked();
+        linear_next_track.has_value()) {
+        return linear_next_track;
     }
 
-    const std::string& current_track_id = playback_history_.back().id;
-    const auto current_track_iterator =
-        std::ranges::find(playback_listing_, current_track_id, &domain::track::id);
-    if (current_track_iterator == playback_listing_.end()) {
-        return std::nullopt;
+    if (repeat_mode_ == domain::playback_repeat_mode::playlist &&
+        !playback_history_.empty() &&
+        !playback_listing_.empty()) {
+        return playback_listing_.front();
     }
 
-    const auto next_track_iterator = std::next(current_track_iterator);
-    if (next_track_iterator == playback_listing_.end()) {
-        return std::nullopt;
-    }
-
-    return *next_track_iterator;
+    return std::nullopt;
 }
 
 std::optional<domain::track> playback_session::peek_previous_track() const {
@@ -135,6 +130,7 @@ domain::playback_queue_state playback_session::get_queue_state() const {
         .current_track_id = playback_history_.empty() ? std::string{} : playback_history_.back().id,
         .queued_tracks = queued_tracks_,
         .shuffle_enabled = shuffle_enabled_,
+        .repeat_mode = repeat_mode_,
         .can_play_previous = playback_history_.size() >= 2,
         .can_play_next = has_next_track_locked(),
     };
@@ -154,6 +150,56 @@ bool playback_session::toggle_shuffle() {
     }
 
     return true;
+}
+
+domain::playback_repeat_mode playback_session::cycle_repeat_mode() {
+    std::scoped_lock lock(state_mutex_);
+    switch (repeat_mode_) {
+        case domain::playback_repeat_mode::none:
+            repeat_mode_ = domain::playback_repeat_mode::playlist;
+            break;
+        case domain::playback_repeat_mode::playlist:
+            repeat_mode_ = domain::playback_repeat_mode::track;
+            break;
+        case domain::playback_repeat_mode::track:
+            repeat_mode_ = domain::playback_repeat_mode::none;
+            break;
+    }
+
+    return repeat_mode_;
+}
+
+std::optional<domain::track> playback_session::peek_completion_track() const {
+    std::scoped_lock lock(state_mutex_);
+
+    if (!queued_tracks_.empty()) {
+        return queued_tracks_.front();
+    }
+
+    if (shuffle_enabled_) {
+        if (shuffled_upcoming_tracks_.empty()) {
+            return std::nullopt;
+        }
+
+        return shuffled_upcoming_tracks_.front();
+    }
+
+    if (repeat_mode_ == domain::playback_repeat_mode::track && !playback_history_.empty()) {
+        return playback_history_.back();
+    }
+
+    if (const std::optional<domain::track> linear_next_track = find_linear_next_track_locked();
+        linear_next_track.has_value()) {
+        return linear_next_track;
+    }
+
+    if (repeat_mode_ == domain::playback_repeat_mode::playlist &&
+        !playback_history_.empty() &&
+        !playback_listing_.empty()) {
+        return playback_listing_.front();
+    }
+
+    return std::nullopt;
 }
 
 std::optional<domain::track> playback_session::find_known_track_locked(
@@ -200,18 +246,13 @@ bool playback_session::has_next_track_locked() const {
         return !shuffled_upcoming_tracks_.empty();
     }
 
-    if (playback_history_.empty()) {
-        return false;
+    if (find_linear_next_track_locked().has_value()) {
+        return true;
     }
 
-    const std::string& current_track_id = playback_history_.back().id;
-    const auto current_track_iterator =
-        std::ranges::find(playback_listing_, current_track_id, &domain::track::id);
-    if (current_track_iterator == playback_listing_.end()) {
-        return false;
-    }
-
-    return std::next(current_track_iterator) != playback_listing_.end();
+    return repeat_mode_ == domain::playback_repeat_mode::playlist &&
+           !playback_history_.empty() &&
+           !playback_listing_.empty();
 }
 
 void playback_session::remove_from_queue_locked(const std::string& track_id) {
@@ -257,6 +298,26 @@ void playback_session::rebuild_shuffle_upcoming_locked(const std::string& curren
         shuffled_upcoming_tracks_.begin(),
         shuffled_upcoming_tracks_.end(),
         random_engine_);
+}
+
+std::optional<domain::track> playback_session::find_linear_next_track_locked() const {
+    if (playback_history_.empty()) {
+        return std::nullopt;
+    }
+
+    const std::string& current_track_id = playback_history_.back().id;
+    const auto current_track_iterator =
+        std::ranges::find(playback_listing_, current_track_id, &domain::track::id);
+    if (current_track_iterator == playback_listing_.end()) {
+        return std::nullopt;
+    }
+
+    const auto next_track_iterator = std::next(current_track_iterator);
+    if (next_track_iterator == playback_listing_.end()) {
+        return std::nullopt;
+    }
+
+    return *next_track_iterator;
 }
 
 }  // namespace soundcloud::core::services

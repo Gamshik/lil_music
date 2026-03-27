@@ -70,6 +70,18 @@ public:
      */
     [[nodiscard]] bool toggle_shuffle();
 
+    /**
+     * Переключает repeat-режим по циклу:
+     * none -> playlist -> track -> none.
+     */
+    [[nodiscard]] domain::playback_repeat_mode cycle_repeat_mode();
+
+    /**
+     * Возвращает следующий трек именно для auto-advance после окончания playback.
+     * Здесь учитываются repeat playlist / repeat track.
+     */
+    [[nodiscard]] std::optional<domain::track> peek_completion_track() const;
+
 private:
     /**
      * Внутренний lookup по всем локальным спискам session-state.
@@ -100,6 +112,12 @@ private:
      * Очередь при этом не трогается: она по-прежнему имеет более высокий приоритет.
      */
     void rebuild_shuffle_upcoming_locked(const std::string& current_track_id);
+
+    /**
+     * Возвращает следующую позицию по playback listing без приоритета очереди.
+     * Используется как строительный блок для manual next и completion flow.
+     */
+    [[nodiscard]] std::optional<domain::track> find_linear_next_track_locked() const;
 
     /**
      * Защищает всё mutable session-state сервиса:
@@ -134,6 +152,11 @@ private:
      * Флаг shuffle-режима для playback listing.
      */
     bool shuffle_enabled_ = false;
+
+    /**
+     * Текущий repeat-режим playback session.
+     */
+    domain::playback_repeat_mode repeat_mode_ = domain::playback_repeat_mode::none;
 
     /**
      * Предвычисленный случайный порядок следующих треков для auto-next и кнопки Next.

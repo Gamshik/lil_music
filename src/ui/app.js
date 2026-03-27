@@ -17,6 +17,8 @@ const playbackProgressThumbElement = document.getElementById("playback-progress-
 const playbackPositionElement = document.getElementById("playback-position");
 const playbackDurationElement = document.getElementById("playback-duration");
 const shuffleButtonElement = document.getElementById("shuffle-button");
+const repeatButtonElement = document.getElementById("repeat-button");
+const repeatBadgeElement = document.getElementById("repeat-badge");
 const prevTrackButtonElement = document.getElementById("prev-track-button");
 const playbackToggleButtonElement = document.getElementById("playback-toggle-button");
 const nextTrackButtonElement = document.getElementById("next-track-button");
@@ -50,6 +52,7 @@ let latestQueueState = {
   currentTrackTitle: "",
   queuedTracks: [],
   shuffleEnabled: false,
+  repeatMode: "none",
   canPlayPrevious: false,
   canPlayNext: false,
 };
@@ -155,6 +158,24 @@ function setPlaybackToggleState({ disabled, paused }) {
 function setShuffleState(shuffleEnabled) {
   shuffleButtonElement.classList.toggle("is-active", Boolean(shuffleEnabled));
   shuffleButtonElement.setAttribute("aria-pressed", shuffleEnabled ? "true" : "false");
+}
+
+function setRepeatMode(repeatMode) {
+  const safeRepeatMode =
+    repeatMode === "playlist" || repeatMode === "track" ? repeatMode : "none";
+  repeatButtonElement.dataset.repeatMode = safeRepeatMode;
+  repeatButtonElement.setAttribute("aria-pressed", safeRepeatMode === "none" ? "false" : "true");
+
+  if (safeRepeatMode === "playlist") {
+    repeatButtonElement.title = "Повтор списка";
+    repeatBadgeElement.textContent = "•";
+  } else if (safeRepeatMode === "track") {
+    repeatButtonElement.title = "Повтор трека";
+    repeatBadgeElement.textContent = "1";
+  } else {
+    repeatButtonElement.title = "Повтор выключен";
+    repeatBadgeElement.textContent = "";
+  }
 }
 
 function canSeekPlayback() {
@@ -344,10 +365,12 @@ async function refreshQueueState() {
     currentTrackTitle: response.currentTrackTitle || "",
     queuedTracks: Array.isArray(response.queuedTracks) ? response.queuedTracks : [],
     shuffleEnabled: Boolean(response.shuffleEnabled),
+    repeatMode: response.repeatMode || "none",
     canPlayPrevious: Boolean(response.canPlayPrevious),
     canPlayNext: Boolean(response.canPlayNext),
   };
   setShuffleState(latestQueueState.shuffleEnabled);
+  setRepeatMode(latestQueueState.repeatMode);
   renderQueue();
 }
 
@@ -572,6 +595,49 @@ async function playNextTrackIfAvailable() {
   }
 }
 
+async function playCompletionFollowUpIfAvailable() {
+  if (isAutoAdvancing) {
+    return;
+  }
+
+  isAutoAdvancing = true;
+
+  try {
+    if (typeof window.playCompletionFollowUp !== "function") {
+      return;
+    }
+
+    const commandExecuted = await runTransportCommand(async () => {
+      const response = normalizeBridgePayload(await window.playCompletionFollowUp());
+      if (response?.ok === false) {
+        throw new Error(response.message || "Не удалось продолжить playback после окончания трека.");
+      }
+
+      if (response?.advanced === false) {
+        return;
+      }
+
+      currentTrackId = response.trackId || "";
+      currentTrackTitle = response.trackTitle || "";
+      isStartingPlayback = true;
+      suppressPlaybackErrorsUntilMs = Date.now() + 2500;
+      markPendingTrackSwitch(currentTrackId, currentTrackTitle);
+      await refreshQueueState();
+    });
+    if (!commandExecuted) {
+      return;
+    }
+
+    await refreshPlaybackState();
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    setPlaybackStatus("Ошибка playback", errorMessage);
+  } finally {
+    isAutoAdvancing = false;
+    syncTransportButtons();
+  }
+}
+
 async function refreshPlaybackState() {
   if (typeof window.getPlaybackState !== "function") {
     return;
@@ -604,12 +670,14 @@ async function refreshPlaybackState() {
     latestQueueState.currentTrackId = response.trackId || latestQueueState.currentTrackId;
     latestQueueState.currentTrackTitle = response.trackTitle || latestQueueState.currentTrackTitle;
     latestQueueState.shuffleEnabled = Boolean(response.shuffleEnabled);
+    latestQueueState.repeatMode = response.repeatMode || latestQueueState.repeatMode;
     latestQueueState.canPlayPrevious = Boolean(response.canPlayPrevious);
     latestQueueState.canPlayNext = Boolean(response.canPlayNext);
     hasLoadedTrack = latestPlaybackState.state !== "idle";
     isPlaybackPaused = latestPlaybackState.state === "paused";
     setPlaybackVisualState(latestPlaybackState.state);
     setShuffleState(latestQueueState.shuffleEnabled);
+    setRepeatMode(latestQueueState.repeatMode);
     updateCurrentTrackHighlights();
 
     const isPlaybackActiveState = ["loading", "playing", "paused"].includes(latestPlaybackState.state);
@@ -649,9 +717,9 @@ async function refreshPlaybackState() {
     );
 
     if (hasPlaybackEnded(previousPlaybackState, latestPlaybackState)) {
-      // Переход к следующему треку инициируется по completion token,
-      // который увеличивается native player-ом при реальном окончании playback.
-      await playNextTrackIfAvailable();
+      // Переход после окончания трека идёт через native session-state:
+      // именно он знает о queue, shuffle и repeat режимах.
+      await playCompletionFollowUpIfAvailable();
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -1038,6 +1106,36 @@ async function handleShuffleToggle() {
   }
 }
 
+async function handleRepeatToggle() {
+  if (typeof window.cycleRepeatMode !== "function") {
+    return;
+  }
+
+  try {
+    const response = normalizeBridgePayload(await window.cycleRepeatMode());
+    if (response?.ok === false) {
+      throw new Error(response.message || "Не удалось переключить repeat.");
+    }
+
+    latestQueueState = {
+      ...latestQueueState,
+      currentTrackId: response.currentTrackId || latestQueueState.currentTrackId,
+      currentTrackTitle: response.currentTrackTitle || latestQueueState.currentTrackTitle,
+      queuedTracks: Array.isArray(response.queuedTracks) ? response.queuedTracks : latestQueueState.queuedTracks,
+      shuffleEnabled: Boolean(response.shuffleEnabled),
+      repeatMode: response.repeatMode || "none",
+      canPlayPrevious: Boolean(response.canPlayPrevious),
+      canPlayNext: Boolean(response.canPlayNext),
+    };
+    setShuffleState(latestQueueState.shuffleEnabled);
+    setRepeatMode(latestQueueState.repeatMode);
+    renderQueue();
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    setPlaybackStatus("Ошибка playback", errorMessage);
+  }
+}
+
 function startPlaybackPolling() {
   if (playbackPollingTimer !== null) {
     clearInterval(playbackPollingTimer);
@@ -1058,6 +1156,7 @@ async function initializePage() {
   setPlaybackProgress(0, 0);
   setVolumeLevel(100);
   setShuffleState(false);
+  setRepeatMode("none");
   setPlaybackVisualState("idle");
   setActiveTab(activeTabId);
   renderFeaturedTracks([], "Здесь появятся популярные треки.");
@@ -1092,6 +1191,9 @@ prevTrackButtonElement.addEventListener("click", () => {
 });
 shuffleButtonElement.addEventListener("click", () => {
   void handleShuffleToggle();
+});
+repeatButtonElement.addEventListener("click", () => {
+  void handleRepeatToggle();
 });
 playbackToggleButtonElement.addEventListener("click", () => {
   void handlePlaybackToggle();

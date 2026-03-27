@@ -82,6 +82,20 @@
             <button id="shuffle-button" class="secondary-button transport-button" type="button">
               Shuffle
             </button>
+            <button
+              id="repeat-button"
+              class="secondary-button transport-button repeat-button"
+              type="button"
+              aria-label="Режим повтора"
+              aria-pressed="false"
+              data-repeat-mode="none"
+              title="Повтор выключен"
+            >
+              <span class="repeat-icon" aria-hidden="true">
+                <span class="repeat-loop">↻</span>
+                <span id="repeat-badge" class="repeat-badge"></span>
+              </span>
+            </button>
             <button id="prev-track-button" class="secondary-button transport-button" type="button" disabled>
               Prev
             </button>
