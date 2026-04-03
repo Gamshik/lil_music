@@ -347,6 +347,7 @@ public:
         std::vector<audio_output_device> devices;
         devices.reserve(devices_result.value().size());
         for (const sonotide::device_info& device : devices_result.value()) {
+            if (device.state != sonotide::device_state::active) { continue; }
             devices.push_back(to_core_audio_output_device(device, selected_device_id));
         }
 
