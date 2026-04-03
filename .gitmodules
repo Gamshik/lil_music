@@ -1,3 +1,6 @@
 [submodule "vendor_webview"]
 	path = third_party/webview
 	url = https://github.com/webview/webview.git
+[submodule "sonotide"]
+	path = third_party/sonotide
+	url = https://github.com/sonotide/sonotide.git
