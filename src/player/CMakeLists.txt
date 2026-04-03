@@ -1,11 +1,6 @@
 add_library(soundcloud_player
     src/audio_player_service.cpp
     src/windows_streaming_audio_backend.cpp
-    src/dsp/biquad_filter.cpp
-    src/dsp/equalizer_chain.cpp
-    src/dsp/equalizer_presets.cpp
-    src/dsp/output_headroom_controller.cpp
-    src/dsp/parameter_smoother.cpp
 )
 
 add_library(soundcloud::player ALIAS soundcloud_player)
@@ -20,11 +15,9 @@ target_include_directories(soundcloud_player
 target_link_libraries(soundcloud_player
     PUBLIC
         soundcloud::core
+    PRIVATE
+        Sonotide::sonotide
 )
-
-if(WIN32)
-    target_link_libraries(soundcloud_player PRIVATE avrt mfplat mfreadwrite mfuuid mmdevapi ole32)
-endif()
 
 include(${PROJECT_SOURCE_DIR}/cmake/project_options.cmake)
 soundcloud_configure_target(soundcloud_player)

@@ -62,7 +62,7 @@ public:
     void set_volume_percent(int volume_percent) override;
 
     /**
-     * Возвращает список устройств вывода, которые доступны текущему WASAPI backend-у.
+     * Возвращает список устройств вывода, которые доступны активной Sonotide playback session.
      */
     [[nodiscard]] std::vector<core::domain::audio_output_device> list_audio_output_devices()
         const override;

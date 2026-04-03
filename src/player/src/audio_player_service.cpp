@@ -7,8 +7,8 @@
 namespace soundcloud::player {
 
 audio_player_service::audio_player_service()
-    // Фасад остаётся тем же, но реальный playback теперь живёт на PCM-level backend,
-    // где можно встроить полноценный DSP-эквалайзер.
+    // Фасад остаётся тем же, но реальный playback теперь делегирован Sonotide:
+    // он инкапсулирует transport, output devices и встроенную DSP-цепочку EQ.
     : backend_(std::make_unique<windows_streaming_audio_backend>()) {}
 
 audio_player_service::~audio_player_service() = default;
@@ -37,7 +37,7 @@ void audio_player_service::pause() {
 
 void audio_player_service::seek_to(const std::int64_t position_ms) {
     // Seek тоже полностью делегируется backend-у, потому что именно он знает
-    // текущий native transport state и ограничения Media Foundation.
+    // текущий native transport state, который держит Sonotide playback session.
     backend_->seek_to(position_ms);
 }
 

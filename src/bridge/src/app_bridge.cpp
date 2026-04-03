@@ -363,7 +363,7 @@ std::vector<ui_binding> app_bridge::get_bindings() const {
 
 std::string app_bridge::build_app_info_response() const {
     // Лёгкий handshake для UI: подтверждаем, что bridge жив и какой playback backend активен.
-    return R"({"ok":true,"applicationName":"LilMusic","bridgeStatus":"connected","playbackBackend":"WASAPI + Media Foundation Source Reader"})";
+    return R"({"ok":true,"applicationName":"LilMusic","bridgeStatus":"connected","playbackBackend":"Sonotide playback session"})";
 }
 
 std::string app_bridge::build_get_equalizer_state_response() const {
