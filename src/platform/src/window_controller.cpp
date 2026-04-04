@@ -3,6 +3,7 @@
 #include <cctype>
 #include <filesystem>
 #include <iomanip>
+#include <fstream>
 #include <sstream>
 #include <string>
 
@@ -12,45 +13,84 @@
 namespace soundcloud::platform {
 namespace {
 
-std::string to_file_url(const std::filesystem::path& file_path) {
-    // Приводим путь к абсолютному виду и к '/'-разделителям, чтобы URL был
-    // одинаково корректным на разных платформах.
-    const std::string normalized_path = std::filesystem::absolute(file_path).generic_string();
-
-    std::ostringstream encoded_path;
-    encoded_path << "file://";
-
-    // Для Windows-путей вида C:/... нужен дополнительный '/' после scheme,
-    // чтобы получить валидный URL формата file:///C:/...
-    if (!normalized_path.empty() && normalized_path.front() != '/') {
-        encoded_path << '/';
+std::string read_text_file(const std::filesystem::path& file_path) {
+    std::ifstream input_stream(file_path, std::ios::binary);
+    if (!input_stream.is_open()) {
+        throw std::runtime_error("Не удалось открыть UI asset: " + file_path.generic_string());
     }
 
-    for (const unsigned char character : normalized_path) {
-        // Оставляем безопасные для URL символы как есть, а всё остальное
-        // кодируем в %HH, чтобы пробелы и спецсимволы не ломали навигацию.
-        if (std::isalnum(character) != 0 ||
-            character == '/' ||
-            character == '-' ||
-            character == '_' ||
-            character == '.' ||
-            character == '~' ||
-            character == ':') {
-            encoded_path << static_cast<char>(character);
-            continue;
+    std::ostringstream buffer;
+    buffer << input_stream.rdbuf();
+    return buffer.str();
+}
+
+std::string escape_script_for_inline_html(std::string script_contents) {
+    constexpr std::string_view closing_script_tag = "</script>";
+    std::size_t position = 0;
+
+    while ((position = script_contents.find(closing_script_tag, position)) != std::string::npos) {
+        script_contents.replace(position, closing_script_tag.size(), "<\\/script>");
+        position += 10;
+    }
+
+    return script_contents;
+}
+
+void replace_all(std::string& source, const std::string& from, const std::string& to) {
+    if (from.empty()) {
+        return;
+    }
+
+    std::size_t search_position = 0;
+    while ((search_position = source.find(from, search_position)) != std::string::npos) {
+        source.replace(search_position, from.length(), to);
+        search_position += to.length();
+    }
+}
+
+std::string build_runtime_html(const std::filesystem::path& entry_file_path) {
+    const std::filesystem::path ui_directory = entry_file_path.parent_path();
+    std::string html = read_text_file(entry_file_path);
+
+    // WebView на file:// плохо дружит с внешними module assets из Vite bundle.
+    // Поэтому на runtime инлайним CSS и JS прямо в HTML, чтобы не зависеть от CORS/origin ограничений.
+    const std::size_t script_tag_position = html.find("<script type=\"module\"");
+    if (script_tag_position != std::string::npos) {
+        const std::size_t script_src_begin = html.find("src=\"", script_tag_position);
+        const std::size_t script_src_end = html.find('"', script_src_begin + 5U);
+        const std::size_t script_tag_end = html.find("</script>", script_tag_position);
+        const std::string script_relative_path =
+            html.substr(script_src_begin + 5U, script_src_end - (script_src_begin + 5U));
+        const std::string script_contents =
+            escape_script_for_inline_html(read_text_file(ui_directory / script_relative_path));
+        html.replace(script_tag_position, script_tag_end + 9U - script_tag_position, "");
+
+        const std::size_t body_end_position = html.find("</body>");
+        if (body_end_position != std::string::npos) {
+            html.insert(body_end_position, "<script>" + script_contents + "</script>");
+        } else {
+            html += "<script>" + script_contents + "</script>";
         }
-
-        encoded_path << '%'
-                     << std::uppercase
-                     << std::hex
-                     << std::setw(2)
-                     << std::setfill('0')
-                     << static_cast<int>(character)
-                     << std::nouppercase
-                     << std::dec;
     }
 
-    return encoded_path.str();
+    const std::size_t stylesheet_tag_position = html.find("<link rel=\"stylesheet\"");
+    if (stylesheet_tag_position != std::string::npos) {
+        const std::size_t stylesheet_href_begin = html.find("href=\"", stylesheet_tag_position);
+        const std::size_t stylesheet_href_end = html.find('"', stylesheet_href_begin + 6U);
+        const std::size_t stylesheet_tag_end = html.find('>', stylesheet_tag_position);
+        const std::string stylesheet_relative_path =
+            html.substr(
+                stylesheet_href_begin + 6U,
+                stylesheet_href_end - (stylesheet_href_begin + 6U));
+        const std::string stylesheet_contents =
+            read_text_file(ui_directory / stylesheet_relative_path);
+        html.replace(
+            stylesheet_tag_position,
+            stylesheet_tag_end + 1U - stylesheet_tag_position,
+            "<style>" + stylesheet_contents + "</style>");
+    }
+
+    return html;
 }
 
 std::string build_missing_asset_html(const std::filesystem::path& missing_file) {
@@ -101,8 +141,9 @@ void window_controller::run(
     }
 
     if (std::filesystem::exists(configuration.entry_file_path)) {
-        // Нормальный путь запуска: открываем локальный UI entry point.
-        window.navigate(to_file_url(configuration.entry_file_path));
+        // В production-runtime показываем инлайненный HTML bundle,
+        // чтобы webview не упирался в file:// ограничения для module assets.
+        window.set_html(build_runtime_html(configuration.entry_file_path));
     } else {
         // Если assets отсутствуют, не оставляем пользователя с пустым окном.
         window.set_html(build_missing_asset_html(configuration.entry_file_path));
