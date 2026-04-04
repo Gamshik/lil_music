@@ -1,0 +1,64 @@
+@use "../../styles/tokens" as *;
+
+.progress {
+  margin-top: 16px;
+}
+
+.track {
+  position: relative;
+  overflow: hidden;
+  height: 8px;
+  border-radius: $radius-pill;
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  touch-action: none;
+}
+
+.fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, $orange, $amber, $cyan);
+  box-shadow: 0 0 22px rgba(107, 232, 244, 0.18);
+  transition: width 180ms ease;
+}
+
+.thumb {
+  position: absolute;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: $paper;
+  box-shadow:
+    0 0 0 4px rgba(239, 196, 106, 0.12),
+    0 6px 18px rgba(0, 0, 0, 0.28);
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  transition:
+    left 180ms ease,
+    opacity 140ms ease,
+    transform 140ms ease;
+}
+
+.track:hover .thumb,
+.isDragging .thumb {
+  opacity: 1;
+}
+
+.isDragging .thumb {
+  transform: translate(-50%, -50%) scale(1.04);
+}
+
+.isDragging .fill,
+.isDragging .thumb {
+  transition: none;
+}
+
+.time {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  color: $muted;
+  font-size: 0.82rem;
+}

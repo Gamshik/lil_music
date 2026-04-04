@@ -1,0 +1,87 @@
+@use "../../styles/tokens" as *;
+
+.control {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.02)),
+    rgba(255, 255, 255, 0.025);
+}
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.label {
+  color: $muted;
+  font-size: 0.84rem;
+}
+
+.summary {
+  color: $muted-strong;
+  font-size: 0.82rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.selectWrap {
+  position: relative;
+  min-width: 0;
+}
+
+.select {
+  min-height: 40px;
+  width: 100%;
+  padding: 0 42px 0 14px;
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.025)),
+    rgba(12, 14, 18, 0.74);
+  color: $text;
+  outline: none;
+}
+
+.select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.chevron {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid rgba(243, 239, 232, 0.72);
+  border-bottom: 2px solid rgba(243, 239, 232, 0.72);
+  pointer-events: none;
+  transform: translateY(-65%) rotate(45deg);
+}
+
+.refreshButton {
+  min-width: 104px;
+  min-height: 40px;
+  padding-inline: 12px;
+  border: 1px solid $line-strong;
+  border-radius: $radius-pill;
+  background: rgba(255, 255, 255, 0.03);
+  color: $text;
+  cursor: pointer;
+}

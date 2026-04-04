@@ -1,0 +1,123 @@
+@use "../../styles/tokens" as *;
+
+.panel {
+  animation: panel-fade 220ms ease;
+}
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: end;
+}
+
+.kicker,
+.fieldLabel {
+  margin: 0 0 8px;
+  color: $paper;
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1.8rem, 3vw, 2.8rem);
+  font-weight: 400;
+  letter-spacing: -0.03em;
+}
+
+.summary {
+  max-width: 60ch;
+  margin: 12px 0 0;
+  color: $muted;
+  line-height: 1.65;
+}
+
+.secondaryButton,
+.primaryButton {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: $radius-pill;
+  cursor: pointer;
+}
+
+.secondaryButton {
+  border: 1px solid $line-strong;
+  background: rgba(255, 255, 255, 0.03);
+  color: $text;
+}
+
+.primaryButton {
+  border: 0;
+  background: linear-gradient(135deg, rgba(255, 143, 77, 0.96), rgba(239, 196, 106, 0.92));
+  color: #17110b;
+  font-weight: 600;
+}
+
+.queueCount {
+  color: $muted;
+}
+
+.searchForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  margin-top: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid $line;
+}
+
+.searchField,
+.parameterField {
+  display: grid;
+  gap: 8px;
+}
+
+.searchSide {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 10px;
+  align-items: end;
+}
+
+.searchField input,
+.parameterField input {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid $line;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  color: $text;
+  outline: none;
+}
+
+.searchField input::placeholder,
+.parameterField input::placeholder {
+  color: rgba(243, 239, 232, 0.38);
+}
+
+@keyframes panel-fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 860px) {
+  .searchForm,
+  .searchSide,
+  .head {
+    grid-template-columns: 1fr;
+  }
+
+  .head {
+    align-items: flex-start;
+  }
+}

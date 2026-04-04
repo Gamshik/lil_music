@@ -1,0 +1,52 @@
+@use "./tokens" as *;
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: $bg;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  overflow-x: hidden;
+  font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  color: $text;
+  background:
+    radial-gradient(circle at 16% 12%, rgba(107, 232, 244, 0.11), transparent 26%),
+    radial-gradient(circle at 88% 10%, rgba(255, 143, 77, 0.1), transparent 22%),
+    linear-gradient(180deg, #0a0b0d 0%, #0e1014 52%, #12141a 100%);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 20%, transparent 80%, rgba(255, 255, 255, 0.02)),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.014), transparent 18%, transparent 82%, rgba(255, 255, 255, 0.014));
+}
+
+body[data-playback-state="playing"] [data-player-shell="true"] {
+  box-shadow:
+    $shadow,
+    0 0 0 1px rgba(107, 232, 244, 0.08),
+    0 0 40px rgba(107, 232, 244, 0.1);
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+#root {
+  min-height: 100vh;
+}

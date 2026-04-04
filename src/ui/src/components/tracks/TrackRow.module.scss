@@ -1,0 +1,111 @@
+@use "../../styles/tokens" as *;
+
+.trackRow {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.trackRow:hover {
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.isCurrent {
+  background: rgba(107, 232, 244, 0.06);
+}
+
+.artworkFrame {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.artwork {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.artworkFallback {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(145deg, rgba(239, 196, 106, 0.18), rgba(255, 143, 77, 0.12));
+  color: $paper;
+  font-weight: 700;
+}
+
+.main {
+  min-width: 0;
+}
+
+.topline {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.title,
+.artist,
+.id {
+  margin: 0;
+}
+
+.title {
+  min-width: 0;
+  font-weight: 600;
+}
+
+.artist,
+.id {
+  color: $muted;
+  font-size: 0.9rem;
+}
+
+.id {
+  flex-shrink: 0;
+  font-family: "Consolas", "SFMono-Regular", monospace;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.queueButton,
+.playButton {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: $radius-pill;
+  cursor: pointer;
+}
+
+.queueButton {
+  border: 1px solid $line-strong;
+  background: rgba(255, 255, 255, 0.03);
+  color: $text;
+}
+
+.playButton {
+  border: 0;
+  background: linear-gradient(135deg, rgba(255, 143, 77, 0.96), rgba(239, 196, 106, 0.92));
+  color: #17110b;
+  font-weight: 600;
+}
+
+@media (max-width: 760px) {
+  .trackRow {
+    grid-template-columns: 56px 1fr;
+  }
+
+  .actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+}

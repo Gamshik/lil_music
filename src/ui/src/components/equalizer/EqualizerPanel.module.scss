@@ -1,0 +1,175 @@
+@use "../../styles/tokens" as *;
+
+.equalizerShell {
+  display: grid;
+  gap: 18px;
+}
+
+.sectionHead {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: end;
+}
+
+.sectionKicker,
+.fieldLabel {
+  margin: 0 0 8px;
+  color: $paper;
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1.8rem, 3vw, 2.8rem);
+  font-weight: 400;
+  letter-spacing: -0.03em;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.statusPill {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: $muted-strong;
+  font-size: 0.86rem;
+}
+
+.secondaryButton,
+.presetButton {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid $line-strong;
+  border-radius: $radius-pill;
+  background: rgba(255, 255, 255, 0.03);
+  color: $text;
+  cursor: pointer;
+}
+
+.summary {
+  max-width: 60ch;
+  margin: 0;
+  color: $muted;
+  line-height: 1.65;
+}
+
+.surface {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
+    rgba(255, 255, 255, 0.02);
+}
+
+.topline {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+}
+
+.copy {
+  display: grid;
+  gap: 4px;
+}
+
+.presetTitle {
+  font-size: 1.2rem;
+}
+
+.meta,
+.statusDetail {
+  margin: 0;
+  color: $muted;
+}
+
+.mainToggle {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.toggleButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: $text;
+  cursor: pointer;
+}
+
+.toggleTrack {
+  position: relative;
+  width: 50px;
+  height: 30px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.toggleThumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: $paper;
+  transition: transform 180ms ease;
+}
+
+.isEnabled .toggleTrack {
+  background: linear-gradient(90deg, $orange, $cyan);
+}
+
+.isEnabled .toggleThumb {
+  transform: translateX(20px);
+}
+
+.toggleCopy {
+  font-weight: 600;
+}
+
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.presetButton.isActive {
+  border-color: rgba(107, 232, 244, 0.44);
+  background:
+    linear-gradient(180deg, rgba(107, 232, 244, 0.12), rgba(107, 232, 244, 0.04)),
+    rgba(255, 255, 255, 0.05);
+}
+
+.isDerived {
+  opacity: 0.72;
+}
+
+.bands {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+@media (max-width: 900px) {
+  .sectionHead,
+  .topline {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

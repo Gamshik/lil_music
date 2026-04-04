@@ -1,0 +1,43 @@
+@use "../../styles/tokens" as *;
+
+.tabs {
+  display: inline-flex;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 6px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.tabButton {
+  min-height: 36px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: $muted;
+  cursor: pointer;
+  transition:
+    background 180ms ease,
+    color 180ms ease,
+    transform 180ms ease;
+}
+
+.tabButton:hover {
+  color: $muted-strong;
+}
+
+.isActive {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03)),
+    rgba(255, 255, 255, 0.04);
+  color: $text;
+}
+
+@media (max-width: 720px) {
+  .tabs {
+    width: 100%;
+    overflow-x: auto;
+  }
+}

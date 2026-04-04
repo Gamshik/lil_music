@@ -1,0 +1,75 @@
+@use "../../styles/tokens" as *;
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+  padding: 18px 20px;
+  border: 1px solid $line;
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
+    $surface;
+  backdrop-filter: blur(24px);
+  box-shadow: $shadow;
+}
+
+.brandGroup {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.brandMark {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  border: 1px solid rgba(239, 196, 106, 0.28);
+  background:
+    linear-gradient(145deg, rgba(239, 196, 106, 0.18), rgba(255, 143, 77, 0.08)),
+    rgba(255, 255, 255, 0.03);
+  color: $paper;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.brandCopy {
+  display: grid;
+  gap: 2px;
+}
+
+.brandTitle {
+  font-size: 1.06rem;
+}
+
+.brandSubtitle,
+.statusDetails {
+  color: $muted;
+  font-size: 0.88rem;
+}
+
+.status {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+  text-align: right;
+}
+
+.statusTitle {
+  font-size: 0.96rem;
+}
+
+@media (max-width: 720px) {
+  .topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .status {
+    justify-items: start;
+    text-align: left;
+  }
+}

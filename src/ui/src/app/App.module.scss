@@ -1,0 +1,45 @@
+@use "../styles/tokens" as *;
+
+.ambient {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ambientCyan {
+  background: radial-gradient(circle at 18% 14%, rgba(107, 232, 244, 0.1), transparent 24%);
+}
+
+.ambientAmber {
+  background: radial-gradient(circle at 84% 18%, rgba(239, 196, 106, 0.08), transparent 24%);
+}
+
+.appShell {
+  position: relative;
+  width: min(1240px, calc(100vw - 40px));
+  margin: 0 auto;
+  padding: 22px 0 40px;
+}
+
+.contentShell {
+  margin-top: 14px;
+  padding: 22px;
+  border: 1px solid $line;
+  border-radius: $radius-lg;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
+    $surface;
+  backdrop-filter: blur(24px);
+  box-shadow: $shadow;
+}
+
+@media (max-width: 960px) {
+  .appShell {
+    width: min(100vw - 20px, 1240px);
+    padding-top: 14px;
+  }
+
+  .contentShell {
+    padding: 18px;
+  }
+}

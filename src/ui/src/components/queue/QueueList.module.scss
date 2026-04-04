@@ -1,0 +1,48 @@
+@use "../../styles/tokens" as *;
+
+.queueList {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+}
+
+.queueItem,
+.emptyState {
+  display: grid;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.queueItem {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.isCurrent {
+  background: rgba(107, 232, 244, 0.06);
+}
+
+.meta {
+  display: grid;
+  gap: 4px;
+}
+
+.title {
+  font-weight: 600;
+}
+
+.artist,
+.emptyState {
+  color: $muted;
+}
+
+.removeButton {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid $line-strong;
+  border-radius: $radius-pill;
+  background: rgba(255, 255, 255, 0.03);
+  color: $text;
+  cursor: pointer;
+}
