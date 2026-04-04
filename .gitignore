@@ -51,6 +51,10 @@
 *.bak
 *.orig
 
+# Frontend build artifacts
+/src/ui/node_modules/
+/src/ui/dist/
+
 # OS-specific noise
 .DS_Store
 Thumbs.db

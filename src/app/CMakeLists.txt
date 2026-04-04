@@ -3,35 +3,39 @@ add_executable(soundcloud_desktop
     src/desktop_application.cpp
 )
 
-set(SOUNDCLOUD_UI_SOURCE_DIR ${PROJECT_SOURCE_DIR}/src/ui)
+set(SOUNDCLOUD_UI_PROJECT_DIR ${PROJECT_SOURCE_DIR}/src/ui)
+set(SOUNDCLOUD_UI_DIST_DIR ${SOUNDCLOUD_UI_PROJECT_DIR}/dist)
+set(SOUNDCLOUD_UI_STAMP_FILE ${CMAKE_CURRENT_BINARY_DIR}/ui_build.stamp)
+
+find_program(SOUNDCLOUD_NPM_EXECUTABLE NAMES npm.cmd npm REQUIRED)
 
 file(GLOB_RECURSE SOUNDCLOUD_UI_SOURCE_FILES CONFIGURE_DEPENDS
-    "${SOUNDCLOUD_UI_SOURCE_DIR}/*.html"
-    "${SOUNDCLOUD_UI_SOURCE_DIR}/*.css"
-    "${SOUNDCLOUD_UI_SOURCE_DIR}/*.js"
+    "${SOUNDCLOUD_UI_PROJECT_DIR}/index.html"
+    "${SOUNDCLOUD_UI_PROJECT_DIR}/package.json"
+    "${SOUNDCLOUD_UI_PROJECT_DIR}/package-lock.json"
+    "${SOUNDCLOUD_UI_PROJECT_DIR}/tsconfig.json"
+    "${SOUNDCLOUD_UI_PROJECT_DIR}/tsconfig.node.json"
+    "${SOUNDCLOUD_UI_PROJECT_DIR}/vite.config.ts"
+    "${SOUNDCLOUD_UI_PROJECT_DIR}/src/*"
 )
 
-set(SOUNDCLOUD_UI_OUTPUT_FILES)
-
-foreach(ui_source_file IN LISTS SOUNDCLOUD_UI_SOURCE_FILES)
-    file(RELATIVE_PATH ui_relative_path "${SOUNDCLOUD_UI_SOURCE_DIR}" "${ui_source_file}")
-    set(ui_output_file "${CMAKE_CURRENT_BINARY_DIR}/ui/${ui_relative_path}")
-    get_filename_component(ui_output_directory "${ui_output_file}" DIRECTORY)
-
-    add_custom_command(
-        OUTPUT "${ui_output_file}"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${ui_output_directory}"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ui_source_file}" "${ui_output_file}"
-        DEPENDS "${ui_source_file}"
-        COMMENT "Copying UI asset ${ui_relative_path}"
-        VERBATIM
-    )
-
-    list(APPEND SOUNDCLOUD_UI_OUTPUT_FILES "${ui_output_file}")
-endforeach()
+add_custom_command(
+    OUTPUT "${SOUNDCLOUD_UI_STAMP_FILE}"
+    COMMAND ${SOUNDCLOUD_NPM_EXECUTABLE} install
+    COMMAND ${SOUNDCLOUD_NPM_EXECUTABLE} run build
+    COMMAND ${CMAKE_COMMAND} -E touch "${SOUNDCLOUD_UI_STAMP_FILE}"
+    WORKING_DIRECTORY "${SOUNDCLOUD_UI_PROJECT_DIR}"
+    DEPENDS ${SOUNDCLOUD_UI_SOURCE_FILES}
+    COMMENT "Building React UI bundle"
+    VERBATIM
+)
 
 add_custom_target(soundcloud_ui_assets ALL
-    DEPENDS ${SOUNDCLOUD_UI_OUTPUT_FILES}
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${CMAKE_CURRENT_BINARY_DIR}/ui"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/ui"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${SOUNDCLOUD_UI_DIST_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/ui"
+    DEPENDS "${SOUNDCLOUD_UI_STAMP_FILE}"
+    COMMENT "Copying built UI bundle"
 )
 
 add_dependencies(soundcloud_desktop soundcloud_ui_assets)
